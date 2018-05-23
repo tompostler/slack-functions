@@ -1,0 +1,10 @@
+{
+  "http": {
+    "routePrefix": ""
+  },
+  "applicationInsights": {
+    "sampling": {
+      "isEnabled": false
+    }
+  }
+}

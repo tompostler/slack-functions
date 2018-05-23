@@ -1,0 +1,25 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio 15
+VisualStudioVersion = 15.0.27703.2000
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "slack-functions", "slack-functions\slack-functions.csproj", "{BCF37CB1-192B-4CE4-B1BD-6F0278B134B4}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{BCF37CB1-192B-4CE4-B1BD-6F0278B134B4}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{BCF37CB1-192B-4CE4-B1BD-6F0278B134B4}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{BCF37CB1-192B-4CE4-B1BD-6F0278B134B4}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{BCF37CB1-192B-4CE4-B1BD-6F0278B134B4}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(ExtensibilityGlobals) = postSolution
+		SolutionGuid = {CDE8B079-D710-4B24-9973-D1120082C26F}
+	EndGlobalSection
+EndGlobal
