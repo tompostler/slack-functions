@@ -31,12 +31,15 @@ namespace slack_functions
                 response_url = uselessData["response_url"]
             };
 
-            // Make sure it's a legit request
-            if (!SlackToken.Equals(data.token))
-                return req.CreateResponse(HttpStatusCode.Unauthorized);
-
             // TODO: remove this once more development has happened
             logger.LogInformation("BODY: {0}", JsonConvert.SerializeObject(data));
+
+            // Make sure it's a legit request
+            if (!SlackToken.Equals(data.token))
+            {
+                logger.LogInformation("App: '{0}' Given: '{1}'", SlackToken, data.token);
+                return req.CreateResponse(HttpStatusCode.Unauthorized);
+            }
 
             // Queue up the work and send back a response
             await collector.AddAsync(new Messages.Request { category = data.text, response_url = data.response_url });

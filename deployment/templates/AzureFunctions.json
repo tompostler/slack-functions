@@ -8,6 +8,12 @@
         "description": "The name of the function app to create."
       }
     },
+    "pSlackTokenImg": {
+      "type": "string",
+      "metadata": {
+        "description": "Slack App Token inserted by the release."
+      }
+    },
     "packageLink": {
       "type": "string"
     },
@@ -30,7 +36,7 @@
     "storageAcctName": "[concat(replace(parameters('appName'), '-', ''), 'st')]",
     "storageAcctNameI": "[concat(replace(parameters('appName'), '-', ''), 'sti')]",
     "storageAccountId": "[concat(resourceGroup().id,'/providers/','Microsoft.Storage/storageAccounts/', variables('storageAcctName'))]",
-    "storageAccountIdI": "[concat(resourceGroup().id,'/providers/','Microsoft.Storage/storageAccounts/', variables('storageAcctNameI'))]",
+    "storageAccountIdI": "[concat(resourceGroup().id,'/providers/','Microsoft.Storage/storageAccounts/', variables('storageAcctNameI'))]"
   },
   "resources": [
     {
@@ -85,6 +91,7 @@
       "dependsOn": [
         "[concat('Microsoft.Web/serverfarms/', variables('hostingPlanName'))]",
         "[concat('Microsoft.Storage/storageAccounts/', variables('storageAcctName'))]",
+        "[concat('Microsoft.Storage/storageAccounts/', variables('storageAcctNameI'))]",
         "[resourceId('microsoft.insights/components/', variables('appInsightsName'))]"
       ],
       "properties": {
@@ -98,6 +105,10 @@
             {
               "name": "StorageIConnection",
               "value": "[concat('DefaultEndpointsProtocol=https;AccountName=', variables('storageAcctNameI'), ';AccountKey=', listKeys(variables('storageAccountIdI'),'2015-05-01-preview').key1)]"
+            },
+            {
+              "name": "SlackTokenImg",
+              "value": "[parameters('pSlackTokenImg')]"
             },
             {
               "name": "APPINSIGHTS_INSTRUMENTATIONKEY",
