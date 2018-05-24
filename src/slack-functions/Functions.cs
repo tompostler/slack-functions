@@ -64,7 +64,7 @@ namespace slack_functions
                         response_type = "in_channel",
                         text = "To request a specific file, use that file's full name as returned by a previous message.\n"
                                 + "Otherwise, you can specific a category or leave it blank to default to all.\n"
-                                + "Available categories: `" + string.Join("`, `", KnownDirectories.Keys) + "`"
+                                + "Available categories: `" + string.Join("`, `", DirectoriesInContainer.Keys) + "`"
                     },
                     JsonMediaTypeFormatter.DefaultMediaType);
             }
@@ -74,7 +74,7 @@ namespace slack_functions
             return req.CreateResponse(HttpStatusCode.OK, new { response_type = "in_channel" }, JsonMediaTypeFormatter.DefaultMediaType);
         }
 
-        private static Dictionary<string, CloudBlobDirectory> KnownDirectories;
+        private static Dictionary<string, CloudBlobDirectory> DirectoriesInContainer;
         private static Random Random = new Random();
 
         [FunctionName(nameof(ProcessImageWebhookAsync))]
@@ -82,13 +82,13 @@ namespace slack_functions
             [QueueTrigger("request", Connection = "StorageConnection")]Messages.Request request,
             ILogger logger)
         {
-            // If known directories is null, populate
-            if (KnownDirectories == null)
+            // If directories in container is null, populate
+            if (DirectoriesInContainer == null)
             {
-                logger.LogInformation("Populating {0}...", nameof(KnownDirectories));
-                KnownDirectories = new Dictionary<string, CloudBlobDirectory>();
+                logger.LogInformation("Populating {0}...", nameof(DirectoriesInContainer));
+                DirectoriesInContainer = new Dictionary<string, CloudBlobDirectory>();
                 foreach (var cbd in ImageContainer.ListBlobs().Where(_ => _ is CloudBlobDirectory).Select(_ => _ as CloudBlobDirectory))
-                    KnownDirectories.Add(cbd.Prefix.Substring(0, cbd.Prefix.Length - 1), cbd);
+                    DirectoriesInContainer.Add(cbd.Prefix.Substring(0, cbd.Prefix.Length - 1), cbd);
             }
 
             // Fix up the category
@@ -134,17 +134,26 @@ namespace slack_functions
                 if (request.category == "all")
                 {
                     ds = new DirectoryStatus();
-                    foreach (var directory in KnownDirectories.Values)
+                    foreach (var directory in DirectoriesInContainer.Values)
                         foreach (var file in directory.ListBlobs().Where(_ => _ is CloudBlob).Select(_ => _ as CloudBlob))
                             ds.UnseenFiles.Add(file.Name);
                 }
-                else
+                else if (DirectoriesInContainer.ContainsKey(request.category))
                 {
-                    var files = KnownDirectories[request.category].ListBlobs().Where(_ => _ is CloudBlob).Select(_ => _ as CloudBlob);
+                    var files = DirectoriesInContainer[request.category].ListBlobs().Where(_ => _ is CloudBlob).Select(_ => _ as CloudBlob);
                     ds = new DirectoryStatus
                     {
                         UnseenFiles = new HashSet<string>(files.Select(_ => _.Name))
                     };
+                }
+                else
+                {
+                    await HttpClient.PostAsJsonAsync(request.response_url, new
+                    {
+                        response_type = "in_channel",
+                        text = "This is not a valid category. Please try again."
+                    });
+                    return;
                 }
             }
             else
@@ -157,9 +166,9 @@ namespace slack_functions
             // Make sure we have unseen files
             if (ds.UnseenFiles.Count == 0)
             {
-                logger.LogInformation("Resetting unseen files from seen.");
-                ds.UnseenFiles = ds.SeenFiles;
-                ds.SeenFiles = new HashSet<string>();
+                logger.LogInformation("Repopulating unseen images from folder...");
+                await config.DeleteIfExistsAsync(DeleteSnapshotsOption.IncludeSnapshots, AccessCondition.GenerateLeaseCondition(leaseId), new BlobRequestOptions(), new OperationContext());
+                throw new InvalidOperationException("This will safely retry the message and reset the configuration file.");
             }
 
             // Pick one
@@ -168,7 +177,7 @@ namespace slack_functions
             {
                 if (blob != null)
                 {
-                    // This if condition happens when a blob we were trying to see doesn't exist.
+                    // This happens when a blob we were trying to see doesn't exist.
                     // Therefore remove it from the seen files.
                     logger.LogInformation("Removing blob '{0}'.", blob.Name);
                     ds.SeenFiles.Remove(blob.Name);
