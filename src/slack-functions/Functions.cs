@@ -7,7 +7,6 @@ using Newtonsoft.Json;
 using System;
 using System.Collections.Generic;
 using System.Configuration;
-using System.IO;
 using System.Linq;
 using System.Net;
 using System.Net.Http;
@@ -104,7 +103,23 @@ namespace slack_functions
                 return;
             }
 
-            //TODO get just a single image
+            // Get just a single image
+            CloudBlob blob = null;
+            if (request.category.Contains("/"))
+            {
+                blob = ImageContainer.GetBlobReference(request.category);
+                if (await blob.ExistsAsync())
+                    await SendImageToSlack(request.response_url, blob, logger);
+                else
+                {
+                    await HttpClient.PostAsJsonAsync(request.response_url, new
+                    {
+                        response_type = "in_channel",
+                        text = "Sorry. That image no longer exists."
+                    });
+                    return;
+                }
+            }
 
             // Get configuration for category
             var config = ImageContainer.GetBlockBlobReference(request.category + ".json");
@@ -146,7 +161,6 @@ namespace slack_functions
 
             // Pick one
             logger.LogInformation("Picking a blob...");
-            CloudBlob blob = null;
             do
             {
                 if (blob != null)
@@ -164,28 +178,7 @@ namespace slack_functions
             }
             while (!await blob.ExistsAsync());
 
-            // Acquire SAS token
-            logger.LogInformation("Acquiring a SAS...");
-            var sas = blob.GetSharedAccessSignature(new SharedAccessBlobPolicy
-            {
-                Permissions = SharedAccessBlobPermissions.Read,
-                SharedAccessStartTime = DateTimeOffset.UtcNow,
-                SharedAccessExpiryTime = DateTimeOffset.UtcNow.AddMinutes(1)
-            });
-
-            // Send a response to slack
-            var res = await HttpClient.PostAsJsonAsync(request.response_url, new
-            {
-                response_type = "in_channel",
-                attachments = new []
-                {
-                    new
-                    {
-                        pretext = blob.Name,
-                        image_url = blob.Uri.AbsoluteUri + sas
-                    }
-                }
-            });
+            await SendImageToSlack(request.response_url, blob, logger);
 
             // Write configuration back and release lease
             logger.LogInformation("Uploading configuration file...");
@@ -196,6 +189,33 @@ namespace slack_functions
                 await config.UploadTextAsync(JsonConvert.SerializeObject(ds), Encoding.UTF8, AccessCondition.GenerateLeaseCondition(leaseId), new BlobRequestOptions(), new OperationContext());
                 await config.ReleaseLeaseAsync(AccessCondition.GenerateLeaseCondition(leaseId));
             }
+        }
+
+        private static async Task SendImageToSlack(string response_url, CloudBlob blob, ILogger logger)
+        {
+            // Acquire SAS token
+            logger.LogInformation("Acquiring a SAS...");
+            var sas = blob.GetSharedAccessSignature(new SharedAccessBlobPolicy
+            {
+                Permissions = SharedAccessBlobPermissions.Read,
+                SharedAccessStartTime = DateTimeOffset.UtcNow,
+                SharedAccessExpiryTime = DateTimeOffset.UtcNow.AddHours(24)
+            });
+
+            // Send a response to slack
+            var res = await HttpClient.PostAsJsonAsync(response_url, new
+            {
+                response_type = "in_channel",
+                attachments = new[]
+                {
+                    new
+                    {
+                        pretext = blob.Name,
+                        image_url = blob.Uri.AbsoluteUri + sas
+                    }
+                }
+            });
+            logger.LogInformation("Help response: {0} {1}", res.StatusCode, await res.Content.ReadAsStringAsync());
         }
     }
 }
