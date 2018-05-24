@@ -23,6 +23,7 @@ namespace slack_functions
         private static string SlackToken => ConfigurationManager.AppSettings.Get("SlackTokenImg");
 
         private static HttpClient HttpClient = new HttpClient();
+        private static Random Random = new Random();
         private static CloudBlobContainer ImageContainer;
 
         static Functions()
@@ -57,6 +58,7 @@ namespace slack_functions
             // If category is help, respond with help immediately
             if (data.text == "help")
             {
+                PopulateDirectoriesInContainer();
                 return req.CreateResponse(
                     HttpStatusCode.OK,
                     new
@@ -75,21 +77,24 @@ namespace slack_functions
         }
 
         private static Dictionary<string, CloudBlobDirectory> DirectoriesInContainer;
-        private static Random Random = new Random();
+        private static void PopulateDirectoriesInContainer()
+        {
+            // If directories in container is null, populate
+            if (DirectoriesInContainer == null)
+            {
+                DirectoriesInContainer = new Dictionary<string, CloudBlobDirectory>();
+                foreach (var cbd in ImageContainer.ListBlobs().Where(_ => _ is CloudBlobDirectory).Select(_ => _ as CloudBlobDirectory))
+                    DirectoriesInContainer.Add(cbd.Prefix.Substring(0, cbd.Prefix.Length - 1), cbd);
+            }
+        }
 
         [FunctionName(nameof(ProcessImageWebhookAsync))]
         public static async Task ProcessImageWebhookAsync(
             [QueueTrigger("request", Connection = "StorageConnection")]Messages.Request request,
             ILogger logger)
         {
-            // If directories in container is null, populate
-            if (DirectoriesInContainer == null)
-            {
-                logger.LogInformation("Populating {0}...", nameof(DirectoriesInContainer));
-                DirectoriesInContainer = new Dictionary<string, CloudBlobDirectory>();
-                foreach (var cbd in ImageContainer.ListBlobs().Where(_ => _ is CloudBlobDirectory).Select(_ => _ as CloudBlobDirectory))
-                    DirectoriesInContainer.Add(cbd.Prefix.Substring(0, cbd.Prefix.Length - 1), cbd);
-            }
+            logger.LogInformation("Populating {0}...", nameof(DirectoriesInContainer));
+            PopulateDirectoriesInContainer();
 
             // Fix up the category
             if (string.IsNullOrWhiteSpace(request.category))
