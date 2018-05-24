@@ -57,7 +57,7 @@ namespace slack_functions
             // If category is help, respond with help immediately
             if (data.text == "help")
             {
-                req.CreateResponse(
+                return req.CreateResponse(
                     HttpStatusCode.OK,
                     new
                     {
