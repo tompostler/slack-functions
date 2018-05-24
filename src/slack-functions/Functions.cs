@@ -170,12 +170,13 @@ namespace slack_functions
             {
                 Permissions = SharedAccessBlobPermissions.Read,
                 SharedAccessStartTime = DateTimeOffset.UtcNow,
-                SharedAccessExpiryTime = DateTimeOffset.UtcNow.AddHours(12)
+                SharedAccessExpiryTime = DateTimeOffset.UtcNow.AddMinutes(1)
             });
 
             // Send a response to slack
             var res = await HttpClient.PostAsJsonAsync(request.response_url, new
             {
+                response_type = "in_channel",
                 attachments = new []
                 {
                     new
