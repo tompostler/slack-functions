@@ -115,7 +115,7 @@ namespace slack_functions
                 blob = ImageContainer.GetBlobReference(request.category);
                 if (await blob.ExistsAsync())
                 {
-                    await SendImageToSlack(request.response_url, blob, logger);
+                    await SendImageToSlack(request.category, request.response_url, blob, logger);
                     return;
                 }
                 else
@@ -173,6 +173,11 @@ namespace slack_functions
             {
                 logger.LogInformation("Repopulating unseen images from folder...");
                 await config.DeleteIfExistsAsync(DeleteSnapshotsOption.IncludeSnapshots, AccessCondition.GenerateLeaseCondition(leaseId), new BlobRequestOptions(), new OperationContext());
+                await HttpClient.PostAsJsonAsync(request.response_url, new
+                {
+                    response_type = "in_channel",
+                    text = $"Rebuilding index for {request.category}"
+                });
                 throw new InvalidOperationException("This will safely retry the message and reset the configuration file.");
             }
 
@@ -195,7 +200,7 @@ namespace slack_functions
             }
             while (!await blob.ExistsAsync());
 
-            await SendImageToSlack(request.response_url, blob, logger);
+            await SendImageToSlack(request.category, request.response_url, blob, logger);
 
             // Write configuration back and release lease
             logger.LogInformation("Uploading configuration file...");
@@ -208,7 +213,7 @@ namespace slack_functions
             }
         }
 
-        private static async Task SendImageToSlack(string response_url, CloudBlob blob, ILogger logger)
+        private static async Task SendImageToSlack(string request_text, string response_url, CloudBlob blob, ILogger logger)
         {
             // Acquire SAS token
             logger.LogInformation("Acquiring a SAS...");
@@ -227,7 +232,7 @@ namespace slack_functions
                 {
                     new
                     {
-                        pretext = blob.Name,
+                        pretext = $"Req: `{request_text}`\nRes: `{blob.Name}`",
                         image_url = blob.Uri.AbsoluteUri + sas
                     }
                 }
