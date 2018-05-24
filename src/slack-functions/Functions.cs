@@ -54,6 +54,21 @@ namespace slack_functions
                 return req.CreateResponse(HttpStatusCode.Unauthorized);
             }
 
+            // If category is help, respond with help immediately
+            if (data.text == "help")
+            {
+                req.CreateResponse(
+                    HttpStatusCode.OK,
+                    new
+                    {
+                        response_type = "in_channel",
+                        text = "To request a specific file, use that file's full name as returned by a previous message.\n"
+                                + "Otherwise, you can specific a category or leave it blank to default to all.\n"
+                                + "Available categories: `" + string.Join("`, `", KnownDirectories.Keys) + "`"
+                    },
+                    JsonMediaTypeFormatter.DefaultMediaType);
+            }
+
             // Queue up the work and send back a response
             await collector.AddAsync(new Messages.Request { category = data.text, response_url = data.response_url });
             return req.CreateResponse(HttpStatusCode.OK, new { response_type = "in_channel" }, JsonMediaTypeFormatter.DefaultMediaType);
@@ -86,21 +101,6 @@ namespace slack_functions
             {
                 logger.LogInformation("Category is '{0}'.", request.category);
                 request.category = request.category.Trim();
-            }
-
-            // If category is help, respond with help
-            if (request.category == "help")
-            {
-                var response = await HttpClient.PostAsJsonAsync(
-                    request.response_url,
-                    new
-                    {
-                        text = "To request a specific file, use that file's full name as returned by a previous message.\n"
-                                + "Otherwise, you can specific a category or leave it blank to default to all.\n"
-                                + "Available categories: `" + string.Join("`, `", KnownDirectories.Keys) + "`"
-                    });
-                logger.LogInformation("Help response: {0} {1}", response.StatusCode, await response.Content.ReadAsStringAsync());
-                return;
             }
 
             // Get just a single image
