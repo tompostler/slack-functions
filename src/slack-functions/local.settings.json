@@ -4,6 +4,7 @@
     "AzureWebJobsStorage": "UseDevelopmentStorage=true",
     "AzureWebJobsDashboard": "UseDevelopmentStorage=true",
     "StorageConnection": "UseDevelopmentStorage=true",
-    "StorageIConnection": "UseDevelopmentStorage=true"
+    "StorageIConnection": "UseDevelopmentStorage=true",
+    "SlackTokenImg": "tom"
   }
 }
