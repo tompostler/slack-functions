@@ -109,7 +109,10 @@ namespace slack_functions
             {
                 blob = ImageContainer.GetBlobReference(request.category);
                 if (await blob.ExistsAsync())
+                {
                     await SendImageToSlack(request.response_url, blob, logger);
+                    return;
+                }
                 else
                 {
                     await HttpClient.PostAsJsonAsync(request.response_url, new
