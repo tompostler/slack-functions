@@ -232,7 +232,7 @@ namespace slack_functions
                 {
                     new
                     {
-                        pretext = $"Req: `{request_text}`\nRes: `{blob.Name}`",
+                        pretext = $"Request: '{request_text}'\nResponse: {blob.Name}",
                         image_url = blob.Uri.AbsoluteUri + sas
                     }
                 }
