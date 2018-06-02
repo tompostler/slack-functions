@@ -72,6 +72,7 @@ namespace slack_functions
             }
 
             // Queue up the work and send back a response
+            logger.LogInformation("Data: {0}", JsonConvert.SerializeObject(data));
             await collector.AddAsync(new Messages.Request { category = data.text, response_url = data.response_url });
             return req.CreateResponse(HttpStatusCode.OK, new { response_type = "in_channel" }, JsonMediaTypeFormatter.DefaultMediaType);
         }
