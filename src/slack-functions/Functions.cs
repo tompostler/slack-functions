@@ -65,7 +65,7 @@ namespace slack_functions
                     {
                         response_type = "in_channel",
                         text = "To request a specific file, use that file's full name as returned by a previous message.\n"
-                                + "Otherwise, you can specific a category or leave it blank to default to all.\n"
+                                + "Otherwise, you can specific a category or leave it blank to default to a special category of 'all'.\n"
                                 + "Available categories: `" + string.Join("`, `", DirectoriesInContainer.Keys) + "`"
                     },
                     JsonMediaTypeFormatter.DefaultMediaType);
@@ -128,6 +128,43 @@ namespace slack_functions
                     });
                     return;
                 }
+            }
+
+            // If they ask for status, then give them some stats
+            if (request.category == "status")
+            {
+                var sb = new StringBuilder();
+                var maxname = Math.Max(DirectoriesInContainer.Keys.Max(_ => _.Length), "category".Length);
+                sb.AppendLine("```");
+                sb.AppendLine($"{"CATEGORY".PadRight(maxname)}  SEEN  UNSEEN  TOTAL  PERCENT VIEWED");
+                foreach (var directory in DirectoriesInContainer.Keys)
+                {
+                    var dirconfig = ImageContainer.GetBlockBlobReference(directory + ".json");
+                    if (!await dirconfig.ExistsAsync())
+                    {
+                        sb.AppendLine($"{directory.PadRight(maxname)}  NOT YET QUERIED");
+                        continue;
+                    }
+                    var dirstatus = JsonConvert.DeserializeObject<DirectoryStatus>(await dirconfig.DownloadTextAsync());
+                    sb.Append(directory.PadRight(maxname));
+                    sb.Append("  ");
+                    sb.Append($"{dirstatus.SeenFiles.Count,4}");
+                    sb.Append("  ");
+                    sb.Append($"{dirstatus.UnseenFiles.Count,6}");
+                    sb.Append("  ");
+                    sb.Append($"{dirstatus.SeenFiles.Count + dirstatus.UnseenFiles.Count,5}");
+                    sb.Append("  ");
+                    sb.Append($"{1d * dirstatus.SeenFiles.Count / (dirstatus.SeenFiles.Count + dirstatus.UnseenFiles.Count),14:P2}");
+                    sb.AppendLine();
+                }
+                sb.AppendLine("```");
+
+                await HttpClient.PostAsJsonAsync(request.response_url, new
+                {
+                    response_type = "in_channel",
+                    text = sb.ToString()
+                });
+                return;
             }
 
             // Get configuration for category
