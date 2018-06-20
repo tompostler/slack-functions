@@ -65,7 +65,8 @@ namespace slack_functions
                     {
                         response_type = "in_channel",
                         text = "To request a specific file, use that file's full name as returned by a previous message.\n"
-                                + "Otherwise, you can specific a category or leave it blank to default to a special category of 'all'.\n"
+                                + "To get a status of how many images have been seen, ask for the special category of 'status'.\n"
+                                + "Otherwise, you can specify a category or leave it blank to default to a special category of 'all' (which is a separate record from each individual category).\n"
                                 + "Available categories: `" + string.Join("`, `", DirectoriesInContainer.Keys) + "`"
                     },
                     JsonMediaTypeFormatter.DefaultMediaType);
@@ -134,29 +135,42 @@ namespace slack_functions
             if (request.category == "status")
             {
                 var sb = new StringBuilder();
-                var maxname = Math.Max(DirectoriesInContainer.Keys.Max(_ => _.Length), "category".Length);
+                var maxname = Math.Max(DirectoriesInContainer.Keys.Union(new[] { "all", "TOTAL" }).Max(_ => _.Length), "category".Length);
                 sb.AppendLine("```");
                 sb.AppendLine($"{"CATEGORY".PadRight(maxname)}  SEEN  UNSEEN  TOTAL  PERCENT VIEWED");
+                (int SeenCount, int UnseenCount) totals = (0, 0);
                 foreach (var directory in DirectoriesInContainer.Keys.Union(new[] { "all" }))
                 {
                     var dirconfig = ImageContainer.GetBlockBlobReference(directory + ".json");
                     if (!await dirconfig.ExistsAsync())
                     {
-                        sb.AppendLine($"{directory.PadRight(maxname)}  NOT YET QUERIED");
+                        sb.AppendLine($"{directory.PadRight(maxname)}      NOT YET QUERIED");
                         continue;
                     }
                     var dirstatus = JsonConvert.DeserializeObject<DirectoryStatus>(await dirconfig.DownloadTextAsync());
                     sb.Append(directory.PadRight(maxname));
                     sb.Append("  ");
                     sb.Append($"{dirstatus.SeenFiles.Count,4}");
+                    totals.SeenCount += dirstatus.SeenFiles.Count;
                     sb.Append("  ");
                     sb.Append($"{dirstatus.UnseenFiles.Count,6}");
+                    totals.UnseenCount += dirstatus.UnseenFiles.Count;
                     sb.Append("  ");
                     sb.Append($"{dirstatus.SeenFiles.Count + dirstatus.UnseenFiles.Count,5}");
                     sb.Append("  ");
                     sb.Append($"{1d * dirstatus.SeenFiles.Count / (dirstatus.SeenFiles.Count + dirstatus.UnseenFiles.Count),14:P2}");
                     sb.AppendLine();
                 }
+                sb.Append("TOTAL".PadRight(maxname));
+                sb.Append("  ");
+                sb.Append($"{totals.SeenCount,4}");
+                sb.Append("  ");
+                sb.Append($"{totals.UnseenCount,6}");
+                sb.Append("  ");
+                sb.Append($"{totals.SeenCount + totals.UnseenCount,5}");
+                sb.Append("  ");
+                sb.Append($"{1d * totals.SeenCount / (totals.SeenCount + totals.UnseenCount),14:P2}");
+                sb.AppendLine();
                 sb.AppendLine("```");
 
                 await HttpClient.PostAsJsonAsync(request.response_url, new
