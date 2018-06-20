@@ -130,14 +130,14 @@ namespace slack_functions
                 }
             }
 
-            // If they ask for status, then give them some stats
+            // If they ask for status, then give them some status
             if (request.category == "status")
             {
                 var sb = new StringBuilder();
                 var maxname = Math.Max(DirectoriesInContainer.Keys.Max(_ => _.Length), "category".Length);
                 sb.AppendLine("```");
                 sb.AppendLine($"{"CATEGORY".PadRight(maxname)}  SEEN  UNSEEN  TOTAL  PERCENT VIEWED");
-                foreach (var directory in DirectoriesInContainer.Keys)
+                foreach (var directory in DirectoriesInContainer.Keys.Union(new[] { "all" }))
                 {
                     var dirconfig = ImageContainer.GetBlockBlobReference(directory + ".json");
                     if (!await dirconfig.ExistsAsync())
@@ -188,6 +188,18 @@ namespace slack_functions
                     {
                         UnseenFiles = new HashSet<string>(files.Select(_ => _.Name))
                     };
+                }
+                else if (DirectoriesInContainer.Keys.Count(k => k.StartsWith(request.category)) > 0)
+                {
+                    // We are letting fuzzy matching take care of it
+                    // Load all the matching categories and pick one of them based on image distribution (for better results)
+                    var dist = DirectoriesInContainer
+                        .Where(dic => dic.Key.StartsWith(request.category))
+                        .SelectMany(dic => dic.Value.ListBlobs().Where(_ => _ is CloudBlob).Select(_ => dic.Key));
+                    config = ImageContainer.GetBlockBlobReference(dist.ElementAt(Random.Next(dist.Count())) + ".json");
+                    logger.LogInformation("Downloading configuration file {0} for fuzzy match on {1}...", config.Name, request.category);
+                    leaseId = await config.AcquireLeaseAsync(TimeSpan.FromSeconds(45));
+                    ds = JsonConvert.DeserializeObject<DirectoryStatus>(await config.DownloadTextAsync());
                 }
                 else
                 {
