@@ -88,10 +88,10 @@ namespace slack_functions
                 var parts = data.text.Split(' ');
                 data.text = parts[1];
                 string errMsg = null;
-                int intervals = default;
+                bool parsed_interval = int.TryParse(parts[2], out int intervals);
                 if (parts.Length != 4)
                     errMsg = "You did not have the right number of arguments to `!timer`.";
-                if (!TimeSpan.TryParse(parts[2], out TimeSpan interval) && !int.TryParse(parts[2], out intervals))
+                if (!TimeSpan.TryParse(parts[2], out TimeSpan interval) && !parsed_interval)
                     errMsg = $"`{parts[2]}` was not a valid TimeSpan.";
                 if (!int.TryParse(parts[3], out int count))
                     errMsg = $"`{parts[3]}` was not a valid count.";
@@ -104,7 +104,7 @@ namespace slack_functions
                             text = errMsg
                         },
                         JsonMediaTypeFormatter.DefaultMediaType);
-                if (intervals != default)
+                if (parsed_interval)
                     interval = TimeSpan.FromSeconds(intervals);
 
                 var duration = TimeSpan.FromSeconds(interval.TotalSeconds * count);
@@ -133,7 +133,7 @@ namespace slack_functions
                                 {
                                     category = data.text,
                                     response_url = data.response_url,
-                                    user_name = data.user_name + ", timer"
+                                    user_name = data.user_name + $", timer {i}/{count}"
                                 })),
                         timeToLive: null,
                         initialVisibilityDelay: TimeSpan.FromSeconds(interval.TotalSeconds * i),
