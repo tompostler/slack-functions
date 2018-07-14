@@ -86,10 +86,12 @@ namespace slack_functions
             if (data.text.StartsWith("!timer"))
             {
                 var parts = data.text.Split(' ');
+                data.text = parts[1];
                 string errMsg = null;
+                int intervals = default;
                 if (parts.Length != 4)
                     errMsg = "You did not have the right number of arguments to `!timer`.";
-                if (!TimeSpan.TryParse(parts[2], out TimeSpan interval))
+                if (!TimeSpan.TryParse(parts[2], out TimeSpan interval) && !int.TryParse(parts[2], out intervals))
                     errMsg = $"`{parts[2]}` was not a valid TimeSpan.";
                 if (!int.TryParse(parts[3], out int count))
                     errMsg = $"`{parts[3]}` was not a valid count.";
@@ -102,6 +104,8 @@ namespace slack_functions
                             text = errMsg
                         },
                         JsonMediaTypeFormatter.DefaultMediaType);
+                if (intervals != default)
+                    interval = TimeSpan.FromSeconds(intervals);
 
                 var duration = TimeSpan.FromSeconds(interval.TotalSeconds * count);
                 if (interval < TimeSpan.FromSeconds(30) || interval > TimeSpan.FromHours(2))
