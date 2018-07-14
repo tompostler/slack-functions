@@ -99,7 +99,7 @@ namespace slack_functions
                 data.text = parts.Length == 4 ? parts[3] : "all";
                 string errMsg = null;
                 bool parsed_interval = int.TryParse(parts[1], out int intervals);
-                if (parts.Length != 4 || parts.Length != 3)
+                if (parts.Length != 4 && parts.Length != 3)
                     errMsg = "You did not have the right number of arguments to `!timer`.";
                 if (!TimeSpan.TryParse(parts[1], out TimeSpan interval) && !parsed_interval)
                     errMsg = $"`{parts[1]}` was not a valid TimeSpan.";
