@@ -6,5 +6,8 @@
     "sampling": {
       "isEnabled": false
     }
+  },
+  "queues": {
+    "maxPollingInterval": 10000
   }
 }

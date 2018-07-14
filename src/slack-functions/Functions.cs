@@ -81,7 +81,7 @@ namespace slack_functions
                                 + "To get a status of how many images have been seen, ask for the special category of 'status'.\n"
                                 + "To schedule a bunch of messages, say `!timer TimeSpan Count [category]` where TimeSpan is a HH:MM:SS interval and count is how many images. (WARNING: There is no check for a valid category before scheduling all the images)\n"
                                 + "\n"
-                                + "Otherwise, you can specify a category or leave it blank to default to a special category of 'all' (which is a separate record from each individual category).\n"
+                                + "Otherwise, you can specify a category or leave it blank to default to a special category of 'all' (which looks at the distribution of images to pick an actual category).\n"
                                 + "\n"
                                 + "Available categories: `" + string.Join("`, `", DirectoriesInContainer.Keys) + "`"
                     },
@@ -96,7 +96,7 @@ namespace slack_functions
                 // parts[2] Count
                 // parts[3] Category (optional)
                 var parts = data.text.Split(' ');
-                data.text = parts.Length == 4 ? parts[3] : "all";
+                data.text = parts.Length == 4 ? parts[3] : null;
                 string errMsg = null;
                 bool parsed_interval = int.TryParse(parts[1], out int intervals);
                 if (parts.Length != 4 && parts.Length != 3)
@@ -248,11 +248,11 @@ namespace slack_functions
             if (request.category == "status")
             {
                 var sb = new StringBuilder();
-                var maxname = Math.Max(DirectoriesInContainer.Keys.Union(new[] { "all", "TOTAL" }).Max(_ => _.Length), "category".Length);
+                var maxname = Math.Max(DirectoriesInContainer.Keys.Union(new[] { "TOTAL" }).Max(_ => _.Length), "category".Length);
                 sb.AppendLine("```");
                 sb.AppendLine($"{"CATEGORY".PadRight(maxname)}  SEEN  UNSEEN  TOTAL  PERCENT VIEWED");
                 (int SeenCount, int UnseenCount) totals = (0, 0);
-                foreach (var directory in DirectoriesInContainer.Keys.Union(new[] { "all" }))
+                foreach (var directory in DirectoriesInContainer.Keys)
                 {
                     var dirconfig = ImageContainer.GetBlockBlobReference(directory + ".json");
                     if (!await dirconfig.ExistsAsync())
@@ -303,10 +303,26 @@ namespace slack_functions
                 logger.LogInformation("Populating configuration file...");
                 if (request.category == "all")
                 {
-                    ds = new DirectoryStatus();
-                    foreach (var directory in DirectoriesInContainer.Values)
-                        foreach (var file in directory.ListBlobs().Where(_ => _ is CloudBlob).Select(_ => _ as CloudBlob))
-                            ds.UnseenFiles.Add(file.Name);
+                    // We are picking a category from all
+                    // Load all the categories and pick one of them based on image distribution (for better results)
+                    var dist = DirectoriesInContainer.SelectMany(dic => dic.Value.ListBlobs().Where(_ => _ is CloudBlob).Select(_ => dic.Key));
+                    var category = dist.ElementAt(Random.Next(dist.Count()));
+                    config = ImageContainer.GetBlockBlobReference(category + ".json");
+                    if (await config.ExistsAsync())
+                    {
+                        logger.LogInformation("Downloading configuration file {0} for all match on {1}...", config.Name, request.category);
+                        leaseId = await config.AcquireLeaseAsync(TimeSpan.FromSeconds(45));
+                        ds = JsonConvert.DeserializeObject<DirectoryStatus>(await config.DownloadTextAsync());
+                    }
+                    else
+                    {
+                        logger.LogInformation("Creating configuration file {0} for all match on {1}...", config.Name, request.category);
+                        var files = DirectoriesInContainer[category].ListBlobs().Where(_ => _ is CloudBlob).Select(_ => _ as CloudBlob);
+                        ds = new DirectoryStatus
+                        {
+                            UnseenFiles = new HashSet<string>(files.Select(_ => _.Name))
+                        };
+                    }
                 }
                 else if (DirectoriesInContainer.ContainsKey(request.category))
                 {
@@ -323,10 +339,23 @@ namespace slack_functions
                     var dist = DirectoriesInContainer
                         .Where(dic => dic.Key.StartsWith(request.category))
                         .SelectMany(dic => dic.Value.ListBlobs().Where(_ => _ is CloudBlob).Select(_ => dic.Key));
-                    config = ImageContainer.GetBlockBlobReference(dist.ElementAt(Random.Next(dist.Count())) + ".json");
-                    logger.LogInformation("Downloading configuration file {0} for fuzzy match on {1}...", config.Name, request.category);
-                    leaseId = await config.AcquireLeaseAsync(TimeSpan.FromSeconds(45));
-                    ds = JsonConvert.DeserializeObject<DirectoryStatus>(await config.DownloadTextAsync());
+                    var category = dist.ElementAt(Random.Next(dist.Count()));
+                    config = ImageContainer.GetBlockBlobReference(category + ".json");
+                    if (await config.ExistsAsync())
+                    {
+                        logger.LogInformation("Downloading configuration file {0} for fuzzy match on {1}...", config.Name, request.category);
+                        leaseId = await config.AcquireLeaseAsync(TimeSpan.FromSeconds(45));
+                        ds = JsonConvert.DeserializeObject<DirectoryStatus>(await config.DownloadTextAsync());
+                    }
+                    else
+                    {
+                        logger.LogInformation("Creating configuration file {0} for fuzzy match on {1}...", config.Name, request.category);
+                        var files = DirectoriesInContainer[category].ListBlobs().Where(_ => _ is CloudBlob).Select(_ => _ as CloudBlob);
+                        ds = new DirectoryStatus
+                        {
+                            UnseenFiles = new HashSet<string>(files.Select(_ => _.Name))
+                        };
+                    }
                 }
                 else
                 {
