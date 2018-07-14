@@ -12,6 +12,7 @@ using System.Linq;
 using System.Net;
 using System.Net.Http;
 using System.Net.Http.Formatting;
+using System.Net.Http.Headers;
 using System.Reflection;
 using System.Text;
 using System.Threading.Tasks;
@@ -23,6 +24,7 @@ namespace slack_functions
         private static string StoreConn => ConfigurationManager.AppSettings.Get("StorageConnection");
         private static string StoreIConn => ConfigurationManager.AppSettings.Get("StorageIConnection");
         private static string SlackToken => ConfigurationManager.AppSettings.Get("SlackTokenImg");
+        private static string SlackOauthToken => ConfigurationManager.AppSettings.Get("SlackOauthToken");
         private static bool DebugFlag => bool.TryParse(ConfigurationManager.AppSettings.Get("Debug"), out bool t) && t;
 
         private static HttpClient HttpClient = new HttpClient();
@@ -34,6 +36,9 @@ namespace slack_functions
             var client = CloudStorageAccount.Parse(StoreIConn).CreateCloudBlobClient();
             ImageContainer = client.GetContainerReference("images");
             ImageContainer.CreateIfNotExists(BlobContainerPublicAccessType.Off);
+
+            if (!string.IsNullOrWhiteSpace(SlackOauthToken))
+                HttpClient.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", SlackOauthToken);
         }
 
         [FunctionName(nameof(ReceiveImageWebhookAsync))]
@@ -44,12 +49,13 @@ namespace slack_functions
         {
             // Get the bits from the message
             var uselessData = await req.Content.ReadAsFormDataAsync();
-            var data = new SlackPost
+            var data = new SlackSlashCommandPayload
             {
-                token = uselessData[nameof(SlackPost.token)],
-                text = uselessData[nameof(SlackPost.text)],
-                response_url = uselessData[nameof(SlackPost.response_url)],
-                user_name = uselessData[nameof(SlackPost.user_name)]
+                token = uselessData[nameof(SlackSlashCommandPayload.token)],
+                text = uselessData[nameof(SlackSlashCommandPayload.text)],
+                response_url = uselessData[nameof(SlackSlashCommandPayload.response_url)],
+                user_name = uselessData[nameof(SlackSlashCommandPayload.user_name)],
+                channel_id = uselessData[nameof(SlackSlashCommandPayload.channel_id)]
             };
             if (DebugFlag) logger.LogInformation(JsonConvert.SerializeObject(uselessData.AllKeys.Select(k => new { key = k, val = uselessData[k] })));
 
@@ -106,13 +112,17 @@ namespace slack_functions
                         JsonMediaTypeFormatter.DefaultMediaType);
                 if (parsed_interval)
                     interval = TimeSpan.FromSeconds(intervals);
+                logger.LogInformation("Category:{0} Interval:{1} Count{2}", data.text, interval, count);
 
+                // Slack callback limitations:
+                //  1. Must be within 30 minutes
+                //  2. Must not use the respone url >5 times
                 var duration = TimeSpan.FromSeconds(interval.TotalSeconds * count);
-                if (interval < TimeSpan.FromSeconds(30) || interval > TimeSpan.FromMinutes(10))
-                    errMsg = "TimeSpan must be between 30 seconds and 10 minutes.";
-                else if (count <= 1)
-                    errMsg = "Count must be greater than 1.";
-                else if (count > 1 && duration > TimeSpan.FromMinutes(25))
+                if (interval < TimeSpan.FromSeconds(30) || interval > TimeSpan.FromMinutes(20))
+                    errMsg = "TimeSpan must be between 30 seconds and 20 minutes.";
+                else if (count <= 1 || count >= 5)
+                    errMsg = "Count must be greater than 1 and less than 5.";
+                else if (duration > TimeSpan.FromMinutes(25))
                     errMsg = $"Count with interval cannot last more than 25 minutes. (Is currently `{duration}`)";
                 if (errMsg != null)
                     return req.CreateResponse(
@@ -124,7 +134,7 @@ namespace slack_functions
                         },
                         JsonMediaTypeFormatter.DefaultMediaType);
 
-                // Now that we passed validation, actually schedule the messages
+                // Now that we passed command validation, actually schedule the messages
                 for (int i = 1; i <= count; i++)
                     await queue.AddMessageAsync(
                         new CloudQueueMessage(
@@ -139,6 +149,20 @@ namespace slack_functions
                         initialVisibilityDelay: TimeSpan.FromSeconds(interval.TotalSeconds * i),
                         options: null,
                         operationContext: null);
+            }
+
+            if (data.text == "!test")
+            {
+                logger.LogInformation("Hit !test");
+                var response = await HttpClient.PostAsJsonAsync(
+                    "https://slack.com/api/chat.postMessage",
+                    new
+                    {
+                        channel = data.channel_id,
+                        text = $"Random test {Random.Next()}"
+                    });
+                logger.LogInformation("Response body: {0}", await response.Content.ReadAsStringAsync());
+                data.text = null;
             }
 
             // Queue up the work and send back a response

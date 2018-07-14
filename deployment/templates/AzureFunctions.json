@@ -14,6 +14,12 @@
         "description": "Slack App Token inserted by the release."
       }
     },
+    "pSlackOauthToken": {
+      "type": "string",
+      "metadata": {
+        "description": "Slack OAuth Token inserted by the release."
+      }
+    },
     "packageLink": {
       "type": "string"
     },
@@ -109,6 +115,10 @@
             {
               "name": "SlackTokenImg",
               "value": "[parameters('pSlackTokenImg')]"
+            },
+            {
+              "name": "SlackOauthToken",
+              "value": "[parameters('pSlackOauthToken')]"
             },
             {
               "name": "Debug",
