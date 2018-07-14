@@ -111,6 +111,10 @@
               "value": "[parameters('pSlackTokenImg')]"
             },
             {
+              "name": "Debug",
+              "value": "true"
+            },
+            {
               "name": "APPINSIGHTS_INSTRUMENTATIONKEY",
               "value": "[reference(concat('microsoft.insights/components/', variables('appInsightsName'))).InstrumentationKey]"
             },

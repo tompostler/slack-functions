@@ -21,6 +21,7 @@ namespace slack_functions
         private static string StoreConn => ConfigurationManager.AppSettings.Get("StorageConnection");
         private static string StoreIConn => ConfigurationManager.AppSettings.Get("StorageIConnection");
         private static string SlackToken => ConfigurationManager.AppSettings.Get("SlackTokenImg");
+        private static bool DebugFlag => bool.TryParse(ConfigurationManager.AppSettings.Get("Debug"), out bool t) && t;
 
         private static HttpClient HttpClient = new HttpClient();
         private static Random Random = new Random();
@@ -47,6 +48,7 @@ namespace slack_functions
                 text = uselessData["text"],
                 response_url = uselessData["response_url"]
             };
+            if (DebugFlag) logger.LogInformation(JsonConvert.SerializeObject(uselessData.AllKeys.Select(k => new { key = k, val = uselessData[k] })));
 
             // Make sure it's a legit request
             if (!SlackToken.Equals(data.token))
