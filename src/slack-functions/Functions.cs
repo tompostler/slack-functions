@@ -79,7 +79,7 @@ namespace slack_functions
                                 + "\n"
                                 + "To request a specific file, use that file's full name as returned by a previous message.\n"
                                 + "To get a status of how many images have been seen, ask for the special category of 'status'.\n"
-                                + "To schedule a bunch of messages, say `!timer category TimeSpan Count` where TimeSpan is a HH:MM:SS interval and count is how many images. (WARNING: There is no check for a valid category before scheduling all the images)\n"
+                                + "To schedule a bunch of messages, say `!timer TimeSpan Count [category]` where TimeSpan is a HH:MM:SS interval and count is how many images. (WARNING: There is no check for a valid category before scheduling all the images)\n"
                                 + "\n"
                                 + "Otherwise, you can specify a category or leave it blank to default to a special category of 'all' (which is a separate record from each individual category).\n"
                                 + "\n"
@@ -91,16 +91,20 @@ namespace slack_functions
             // If category is !timer, then do the timer
             if (data.text.StartsWith("!timer"))
             {
+                // parts[0] !timer
+                // parts[1] TimeSpan
+                // parts[2] Count
+                // parts[3] Category (optional)
                 var parts = data.text.Split(' ');
-                data.text = parts[1];
+                data.text = parts.Length == 4 ? parts[3] : "all";
                 string errMsg = null;
-                bool parsed_interval = int.TryParse(parts[2], out int intervals);
-                if (parts.Length != 4)
+                bool parsed_interval = int.TryParse(parts[1], out int intervals);
+                if (parts.Length != 4 || parts.Length != 3)
                     errMsg = "You did not have the right number of arguments to `!timer`.";
-                if (!TimeSpan.TryParse(parts[2], out TimeSpan interval) && !parsed_interval)
-                    errMsg = $"`{parts[2]}` was not a valid TimeSpan.";
-                if (!int.TryParse(parts[3], out int count))
-                    errMsg = $"`{parts[3]}` was not a valid count.";
+                if (!TimeSpan.TryParse(parts[1], out TimeSpan interval) && !parsed_interval)
+                    errMsg = $"`{parts[1]}` was not a valid TimeSpan.";
+                if (!int.TryParse(parts[2], out int count))
+                    errMsg = $"`{parts[2]}` was not a valid count.";
                 if (errMsg != null)
                     return req.CreateResponse(
                         HttpStatusCode.OK,
@@ -114,16 +118,13 @@ namespace slack_functions
                     interval = TimeSpan.FromSeconds(intervals);
                 logger.LogInformation("Category:{0} Interval:{1} Count{2}", data.text, interval, count);
 
-                // Slack callback limitations:
-                //  1. Must be within 30 minutes
-                //  2. Must not use the respone url >5 times
                 var duration = TimeSpan.FromSeconds(interval.TotalSeconds * count);
-                if (interval < TimeSpan.FromSeconds(30) || interval > TimeSpan.FromMinutes(20))
-                    errMsg = "TimeSpan must be between 30 seconds and 20 minutes.";
-                else if (count <= 1 || count >= 5)
-                    errMsg = "Count must be greater than 1 and less than 5.";
-                else if (duration > TimeSpan.FromMinutes(25))
-                    errMsg = $"Count with interval cannot last more than 25 minutes. (Is currently `{duration}`)";
+                if (interval < TimeSpan.FromSeconds(30) || interval > TimeSpan.FromMinutes(30))
+                    errMsg = "TimeSpan must be between 30 seconds and 30 minutes.";
+                else if (count <= 1 || count >= 50)
+                    errMsg = "Count must be greater than 1 and less than 50.";
+                else if (duration > TimeSpan.FromHours(8))
+                    errMsg = $"Count with interval cannot last more than 8 hours. (Is currently `{duration}`)";
                 if (errMsg != null)
                     return req.CreateResponse(
                         HttpStatusCode.OK,
@@ -142,6 +143,7 @@ namespace slack_functions
                                 new Messages.Request
                                 {
                                     category = data.text,
+                                    channel_id = data.channel_id,
                                     response_url = data.response_url,
                                     user_name = data.user_name + $", timer {i}/{count}"
                                 })),
@@ -149,6 +151,16 @@ namespace slack_functions
                         initialVisibilityDelay: TimeSpan.FromSeconds(interval.TotalSeconds * i),
                         options: null,
                         operationContext: null);
+
+                // Inform of the configuration
+                return req.CreateResponse(
+                    HttpStatusCode.OK,
+                    new
+                    {
+                        response_type = "in_channel",
+                        text = $"{data.user_name} has scheduled {count} images for the '{data.text}' category every {interval} for the next {duration}."
+                    },
+                    JsonMediaTypeFormatter.DefaultMediaType);
             }
 
             if (data.text == "!test")
@@ -166,7 +178,16 @@ namespace slack_functions
             }
 
             // Queue up the work and send back a response
-            await queue.AddMessageAsync(new CloudQueueMessage(JsonConvert.SerializeObject(new Messages.Request { category = data.text, response_url = data.response_url, user_name = data.user_name })));
+            await queue.AddMessageAsync(
+                new CloudQueueMessage(
+                    JsonConvert.SerializeObject(
+                        new Messages.Request
+                        {
+                            category = data.text,
+                            channel_id = data.channel_id,
+                            response_url = data.response_url,
+                            user_name = data.user_name
+                        })));
             return req.CreateResponse(HttpStatusCode.OK, new { response_type = "in_channel" }, JsonMediaTypeFormatter.DefaultMediaType);
         }
 
@@ -209,7 +230,7 @@ namespace slack_functions
                 blob = ImageContainer.GetBlobReference(request.category);
                 if (await blob.ExistsAsync())
                 {
-                    await SendImageToSlack(request.category, request.user_name, request.response_url, blob, logger);
+                    await SendImageToSlack(request.category, request.user_name, request.channel_id, blob, logger);
                     return;
                 }
                 else
@@ -356,7 +377,7 @@ namespace slack_functions
             }
             while (!await blob.ExistsAsync());
 
-            await SendImageToSlack(request.category, request.user_name, request.response_url, blob, logger);
+            await SendImageToSlack(request.category, request.user_name, request.channel_id, blob, logger);
 
             // Write configuration back and release lease
             logger.LogInformation("Uploading configuration file...");
@@ -369,7 +390,7 @@ namespace slack_functions
             }
         }
 
-        private static async Task SendImageToSlack(string request_text, string user_name, string response_url, CloudBlob blob, ILogger logger)
+        private static async Task SendImageToSlack(string request_text, string user_name, string channel_id, CloudBlob blob, ILogger logger)
         {
             // Acquire SAS token
             logger.LogInformation("Acquiring a SAS...");
@@ -381,19 +402,21 @@ namespace slack_functions
             });
 
             // Send a response to slack
-            var res = await HttpClient.PostAsJsonAsync(response_url, new
-            {
-                response_type = "in_channel",
-                attachments = new[]
+            var res = await HttpClient.PostAsJsonAsync(
+                "https://slack.com/api/chat.postMessage",
+                new
                 {
-                    new
+                    channel = channel_id,
+                    attachments = new[]
                     {
-                        pretext = $"Request: '{request_text}' ({user_name})\nResponse: {blob.Name}",
-                        image_url = blob.Uri.AbsoluteUri + sas
+                        new
+                        {
+                            pretext = $"Request: '{request_text}' ({user_name})\nResponse: {blob.Name}",
+                            image_url = blob.Uri.AbsoluteUri + sas
+                        }
                     }
-                }
-            });
-            logger.LogInformation("Help response: {0} {1}", res.StatusCode, await res.Content.ReadAsStringAsync());
+                });
+            logger.LogInformation("{0} response: {1} {2}", nameof(SendImageToSlack), res.StatusCode, await res.Content.ReadAsStringAsync());
         }
     }
 }
