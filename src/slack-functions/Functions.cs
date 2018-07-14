@@ -3,6 +3,7 @@ using Microsoft.Azure.WebJobs.Extensions.Http;
 using Microsoft.Extensions.Logging;
 using Microsoft.WindowsAzure.Storage;
 using Microsoft.WindowsAzure.Storage.Blob;
+using Microsoft.WindowsAzure.Storage.Queue;
 using Newtonsoft.Json;
 using System;
 using System.Collections.Generic;
@@ -11,6 +12,7 @@ using System.Linq;
 using System.Net;
 using System.Net.Http;
 using System.Net.Http.Formatting;
+using System.Reflection;
 using System.Text;
 using System.Threading.Tasks;
 
@@ -37,16 +39,17 @@ namespace slack_functions
         [FunctionName(nameof(ReceiveImageWebhookAsync))]
         public static async Task<HttpResponseMessage> ReceiveImageWebhookAsync(
             [HttpTrigger(AuthorizationLevel.Function, "post", Route = "slack/img")]HttpRequestMessage req,
-            [Queue("request", Connection = "StorageConnection")]IAsyncCollector<Messages.Request> collector,
+            [Queue("request", Connection = "StorageConnection")]CloudQueue queue,
             ILogger logger)
         {
             // Get the bits from the message
             var uselessData = await req.Content.ReadAsFormDataAsync();
             var data = new SlackPost
             {
-                token = uselessData["token"],
-                text = uselessData["text"],
-                response_url = uselessData["response_url"]
+                token = uselessData[nameof(SlackPost.token)],
+                text = uselessData[nameof(SlackPost.text)],
+                response_url = uselessData[nameof(SlackPost.response_url)],
+                user_name = uselessData[nameof(SlackPost.user_name)]
             };
             if (DebugFlag) logger.LogInformation(JsonConvert.SerializeObject(uselessData.AllKeys.Select(k => new { key = k, val = uselessData[k] })));
 
@@ -66,17 +69,76 @@ namespace slack_functions
                     new
                     {
                         response_type = "in_channel",
-                        text = "To request a specific file, use that file's full name as returned by a previous message.\n"
+                        text = $"slack-functions v{AssemblyName.GetAssemblyName(Assembly.GetExecutingAssembly().Location).Version.ToString()}\n"
+                                + "\n"
+                                + "To request a specific file, use that file's full name as returned by a previous message.\n"
                                 + "To get a status of how many images have been seen, ask for the special category of 'status'.\n"
+                                + "To schedule a bunch of messages, say `!timer category TimeSpan Count` where TimeSpan is a HH:MM:SS interval and count is how many images. (WARNING: There is no check for a valid category before scheduling all the images)\n"
+                                + "\n"
                                 + "Otherwise, you can specify a category or leave it blank to default to a special category of 'all' (which is a separate record from each individual category).\n"
+                                + "\n"
                                 + "Available categories: `" + string.Join("`, `", DirectoriesInContainer.Keys) + "`"
                     },
                     JsonMediaTypeFormatter.DefaultMediaType);
             }
 
+            // If category is !timer, then do the timer
+            if (data.text.StartsWith("!timer"))
+            {
+                var parts = data.text.Split(' ');
+                string errMsg = null;
+                if (parts.Length != 4)
+                    errMsg = "You did not have the right number of arguments to `!timer`.";
+                if (!TimeSpan.TryParse(parts[2], out TimeSpan interval))
+                    errMsg = $"`{parts[2]}` was not a valid TimeSpan.";
+                if (!int.TryParse(parts[3], out int count))
+                    errMsg = $"`{parts[3]}` was not a valid count.";
+                if (errMsg != null)
+                    return req.CreateResponse(
+                        HttpStatusCode.OK,
+                        new
+                        {
+                            response_type = "in_channel",
+                            text = errMsg
+                        },
+                        JsonMediaTypeFormatter.DefaultMediaType);
+
+                var duration = TimeSpan.FromSeconds(interval.TotalSeconds * count);
+                if (interval < TimeSpan.FromSeconds(30) || interval > TimeSpan.FromHours(2))
+                    errMsg = "TimeSpan must be between 30 seconds and 2 hours.";
+                else if (count <= 1)
+                    errMsg = "Count must be greater than 1.";
+                else if (count > 1 && duration > TimeSpan.FromHours(8))
+                    errMsg = $"Count with interval cannot last more than 8 hours. (Is currently `{duration}`)";
+                if (errMsg != null)
+                    return req.CreateResponse(
+                        HttpStatusCode.OK,
+                        new
+                        {
+                            response_type = "in_channel",
+                            text = errMsg
+                        },
+                        JsonMediaTypeFormatter.DefaultMediaType);
+
+                // Now that we passed validation, actually schedule the messages
+                for (int i = 1; i <= count; i++)
+                    await queue.AddMessageAsync(
+                        new CloudQueueMessage(
+                            JsonConvert.SerializeObject(
+                                new Messages.Request
+                                {
+                                    category = data.text,
+                                    response_url = data.response_url,
+                                    user_name = data.user_name + ", timer"
+                                })),
+                        timeToLive: null,
+                        initialVisibilityDelay: TimeSpan.FromSeconds(interval.TotalSeconds * i),
+                        options: null,
+                        operationContext: null);
+            }
+
             // Queue up the work and send back a response
-            logger.LogInformation("Data: {0}", JsonConvert.SerializeObject(data));
-            await collector.AddAsync(new Messages.Request { category = data.text, response_url = data.response_url });
+            await queue.AddMessageAsync(new CloudQueueMessage(JsonConvert.SerializeObject(new Messages.Request { category = data.text, response_url = data.response_url, user_name = data.user_name })));
             return req.CreateResponse(HttpStatusCode.OK, new { response_type = "in_channel" }, JsonMediaTypeFormatter.DefaultMediaType);
         }
 
@@ -119,7 +181,7 @@ namespace slack_functions
                 blob = ImageContainer.GetBlobReference(request.category);
                 if (await blob.ExistsAsync())
                 {
-                    await SendImageToSlack(request.category, request.response_url, blob, logger);
+                    await SendImageToSlack(request.category, request.user_name, request.response_url, blob, logger);
                     return;
                 }
                 else
@@ -266,7 +328,7 @@ namespace slack_functions
             }
             while (!await blob.ExistsAsync());
 
-            await SendImageToSlack(request.category, request.response_url, blob, logger);
+            await SendImageToSlack(request.category, request.user_name, request.response_url, blob, logger);
 
             // Write configuration back and release lease
             logger.LogInformation("Uploading configuration file...");
@@ -279,7 +341,7 @@ namespace slack_functions
             }
         }
 
-        private static async Task SendImageToSlack(string request_text, string response_url, CloudBlob blob, ILogger logger)
+        private static async Task SendImageToSlack(string request_text, string user_name, string response_url, CloudBlob blob, ILogger logger)
         {
             // Acquire SAS token
             logger.LogInformation("Acquiring a SAS...");
@@ -298,7 +360,7 @@ namespace slack_functions
                 {
                     new
                     {
-                        pretext = $"Request: '{request_text}'\nResponse: {blob.Name}",
+                        pretext = $"Request: '{request_text}' ({user_name})\nResponse: {blob.Name}",
                         image_url = blob.Uri.AbsoluteUri + sas
                     }
                 }
