@@ -108,12 +108,12 @@ namespace slack_functions
                     interval = TimeSpan.FromSeconds(intervals);
 
                 var duration = TimeSpan.FromSeconds(interval.TotalSeconds * count);
-                if (interval < TimeSpan.FromSeconds(30) || interval > TimeSpan.FromHours(2))
-                    errMsg = "TimeSpan must be between 30 seconds and 2 hours.";
+                if (interval < TimeSpan.FromSeconds(30) || interval > TimeSpan.FromMinutes(10))
+                    errMsg = "TimeSpan must be between 30 seconds and 10 minutes.";
                 else if (count <= 1)
                     errMsg = "Count must be greater than 1.";
-                else if (count > 1 && duration > TimeSpan.FromHours(8))
-                    errMsg = $"Count with interval cannot last more than 8 hours. (Is currently `{duration}`)";
+                else if (count > 1 && duration > TimeSpan.FromMinutes(25))
+                    errMsg = $"Count with interval cannot last more than 25 minutes. (Is currently `{duration}`)";
                 if (errMsg != null)
                     return req.CreateResponse(
                         HttpStatusCode.OK,
