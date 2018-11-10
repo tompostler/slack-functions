@@ -323,6 +323,7 @@ namespace slack_functions
                 {
                     // We are picking a category from all
                     // Load all the categories and pick one of them based on image distribution (for better results)
+                    //TODO: compare it based off of unseen images instead of images in the dirs
                     var dist = DirectoriesInContainer.SelectMany(dic => dic.Value.ListBlobs().Where(_ => _ is CloudBlob).Select(_ => dic.Key));
                     var category = dist.ElementAt(Random.Next(dist.Count()));
                     config = ImageContainer.GetBlockBlobReference(category + ".json");
@@ -383,6 +384,8 @@ namespace slack_functions
                         response_type = "in_channel",
                         text = "This is not a valid category. Please try again."
                     });
+                    if (!string.IsNullOrWhiteSpace(leaseId))
+                        await config.ReleaseLeaseAsync(AccessCondition.GenerateLeaseCondition(leaseId));
                     return;
                 }
             }
