@@ -384,8 +384,6 @@ namespace slack_functions
                         response_type = "in_channel",
                         text = "This is not a valid category. Please try again."
                     });
-                    if (!string.IsNullOrWhiteSpace(leaseId))
-                        await config.ReleaseLeaseAsync(AccessCondition.GenerateLeaseCondition(leaseId));
                     return;
                 }
             }
@@ -405,6 +403,8 @@ namespace slack_functions
                     response_type = "in_channel",
                     text = $"No more unseen images for {request.category}. Use `!reset {request.category}`"
                 });
+                if (!string.IsNullOrWhiteSpace(leaseId))
+                    await config.ReleaseLeaseAsync(AccessCondition.GenerateLeaseCondition(leaseId));
                 return;
             }
 
