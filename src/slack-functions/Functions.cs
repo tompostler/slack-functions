@@ -80,6 +80,7 @@ namespace slack_functions
                                 + "To request a specific file, use that file's full name as returned by a previous message.\n"
                                 + "To get a status of how many images have been seen, ask for the special category of 'status'.\n"
                                 + "To schedule a bunch of messages, say `!timer TimeSpan Count [category]` where TimeSpan is a HH:MM:SS interval and count is how many images. (WARNING: There is no check for a valid category before scheduling all the images)\n"
+                                + "To reset a category for re-viewing, say `!reset category`.\n"
                                 + "\n"
                                 + "Otherwise, you can specify a category or leave it blank to default to a special category of 'all' (which looks at the distribution of images to pick an actual category).\n"
                                 + "\n"
@@ -159,6 +160,23 @@ namespace slack_functions
                     {
                         response_type = "in_channel",
                         text = $"{data.user_name} has scheduled {count} images for the '{data.text}' category every {interval} for the next {duration}."
+                    },
+                    JsonMediaTypeFormatter.DefaultMediaType);
+            }
+
+            if (data.text.StartsWith("!reset"))
+            {
+                var category = data.text.Split(' ').Last().Trim();
+                var config = ImageContainer.GetBlockBlobReference(category + ".json");
+                var successful = await config.DeleteIfExistsAsync();
+
+                // Inform of the configuration
+                return req.CreateResponse(
+                    HttpStatusCode.OK,
+                    new
+                    {
+                        response_type = "in_channel",
+                        text = $"Resetting configuration for {category} was {(successful ? string.Empty : "un")}successful."
                     },
                     JsonMediaTypeFormatter.DefaultMediaType);
             }
@@ -336,6 +354,7 @@ namespace slack_functions
                 {
                     // We are letting fuzzy matching take care of it
                     // Load all the matching categories and pick one of them based on image distribution (for better results)
+                    //TODO: compare it based off of unseen images instead of images in the dirs
                     var dist = DirectoriesInContainer
                         .Where(dic => dic.Key.StartsWith(request.category))
                         .SelectMany(dic => dic.Value.ListBlobs().Where(_ => _ is CloudBlob).Select(_ => dic.Key));
@@ -377,14 +396,13 @@ namespace slack_functions
             // Make sure we have unseen files
             if (ds.UnseenFiles.Count == 0)
             {
-                logger.LogInformation("Repopulating unseen images from folder...");
-                await config.DeleteIfExistsAsync(DeleteSnapshotsOption.IncludeSnapshots, AccessCondition.GenerateLeaseCondition(leaseId), new BlobRequestOptions(), new OperationContext());
+                logger.LogInformation("Notifying out of images...");
                 await HttpClient.PostAsJsonAsync(request.response_url, new
                 {
                     response_type = "in_channel",
-                    text = $"Rebuilding index for {request.category}"
+                    text = $"No more unseen images for {request.category}. Use `!reset {request.category}`"
                 });
-                throw new InvalidOperationException("This will safely retry the message and reset the configuration file.");
+                return;
             }
 
             // Pick one
