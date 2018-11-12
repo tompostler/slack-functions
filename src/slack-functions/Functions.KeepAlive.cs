@@ -10,7 +10,7 @@ namespace slack_functions
         {
             [FunctionName(nameof(KeepAliveEvenings))]
             public static void KeepAliveEvenings(
-                [TimerTrigger("0 * 17-22 * * *")]TimerInfo timer,
+                [TimerTrigger("0 * 17-23 * * *")]TimerInfo timer,
                 ILogger logger)
             {
                 logger.LogInformation("IT'S {0} AND ALL IS WELL.", DateTimeOffset.Now);

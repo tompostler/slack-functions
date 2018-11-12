@@ -79,7 +79,7 @@ namespace slack_functions
                                 + "\n"
                                 + "To request a specific file, use that file's full name as returned by a previous message.\n"
                                 + "To get a status of how many images have been seen, ask for the special category of 'status'.\n"
-                                + "To schedule a bunch of messages, say `!timer interval duration [category]` where `interval` and `duration` are TimeSpans represented as HH:MM:SS or `interval` is the number of minutes between images and `duration` is simply the number of hours to run. (WARNING: There is no check for a valid category before scheduling all the images)\n"
+                                + "To schedule a bunch of messages, say `!timer interval duration [category]` where `interval` and `duration` are TimeSpans represented as HH:MM:SS or `interval` is the number of minutes between images and `duration` is simply the number of hours to run. (WARNING: There is no check for a valid category before scheduling all the images). Just `timer` also works.\n"
                                 + "To reset a category for re-viewing, say `!reset category`.\n"
                                 + "\n"
                                 + "Otherwise, you can specify a category or leave it blank to default to a special category of 'all' (which looks at the distribution of images to pick an actual category).\n"
@@ -90,9 +90,9 @@ namespace slack_functions
             }
 
             // If category is !timer, then do the timer
-            if (data.text.StartsWith("!timer"))
+            if (data.text.StartsWith("!timer") || data.text.StartsWith("timer"))
             {
-                // parts[0] !timer
+                // parts[0] !timer/timer
                 // parts[1] TimeSpan/minutes interval
                 // parts[2] TimeSpan/hours duration
                 // parts[3] Category (optional)
