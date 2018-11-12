@@ -138,7 +138,7 @@ namespace slack_functions
 
                 // Now that we passed command validation, actually schedule the messages
                 var count = (int)(duration.TotalSeconds / interval.TotalSeconds) + 1;
-                for (int i = 0; i <= count; i++)
+                for (int i = 0; i < count; i++)
                     await queue.AddMessageAsync(
                         new CloudQueueMessage(
                             JsonConvert.SerializeObject(
