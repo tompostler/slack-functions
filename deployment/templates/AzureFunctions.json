@@ -151,6 +151,10 @@
             {
               "name": "WEBSITE_CONTENTSHARE",
               "value": "[toLower(parameters('appName'))]"
+            },
+            {
+              "name": "WEBSITE_TIME_ZONE",
+              "value": "Central Standard Time"
             }
           ]
         }

@@ -3,7 +3,15 @@ Microsoft Visual Studio Solution File, Format Version 12.00
 # Visual Studio 15
 VisualStudioVersion = 15.0.27703.2000
 MinimumVisualStudioVersion = 10.0.40219.1
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "slack-functions", "slack-functions\slack-functions.csproj", "{BCF37CB1-192B-4CE4-B1BD-6F0278B134B4}"
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "slack-functions", "slack-functions\slack-functions.csproj", "{BCF37CB1-192B-4CE4-B1BD-6F0278B134B4}"
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "deployment", "deployment", "{3C7A4E46-15C7-44D9-B8D4-A517904BF7FA}"
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "templates", "templates", "{C76A23D8-60C8-46FB-9142-15697C538288}"
+	ProjectSection(SolutionItems) = preProject
+		..\deployment\templates\AzureFunctions.json = ..\deployment\templates\AzureFunctions.json
+		..\deployment\templates\SimpleStorageAccount.json = ..\deployment\templates\SimpleStorageAccount.json
+	EndProjectSection
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
@@ -18,6 +26,9 @@ Global
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(NestedProjects) = preSolution
+		{C76A23D8-60C8-46FB-9142-15697C538288} = {3C7A4E46-15C7-44D9-B8D4-A517904BF7FA}
 	EndGlobalSection
 	GlobalSection(ExtensibilityGlobals) = postSolution
 		SolutionGuid = {CDE8B079-D710-4B24-9973-D1120082C26F}
