@@ -79,7 +79,7 @@ namespace slack_functions
                                 + "\n"
                                 + "To request a specific file, use that file's full name as returned by a previous message.\n"
                                 + "To get a status of how many images have been seen, ask for the special category of 'status'.\n"
-                                + "To schedule a bunch of messages, say `!timer TimeSpan Count [category]` where TimeSpan is a HH:MM:SS interval and count is how many images. (WARNING: There is no check for a valid category before scheduling all the images)\n"
+                                + "To schedule a bunch of messages, say `!timer interval duration [category]` where `interval` and `duration` are TimeSpans represented as HH:MM:SS or `interval` is the number of minutes between images and `duration` is simply the number of hours to run. (WARNING: There is no check for a valid category before scheduling all the images)\n"
                                 + "To reset a category for re-viewing, say `!reset category`.\n"
                                 + "\n"
                                 + "Otherwise, you can specify a category or leave it blank to default to a special category of 'all' (which looks at the distribution of images to pick an actual category).\n"
@@ -93,19 +93,20 @@ namespace slack_functions
             if (data.text.StartsWith("!timer"))
             {
                 // parts[0] !timer
-                // parts[1] TimeSpan
-                // parts[2] Count
+                // parts[1] TimeSpan/minutes interval
+                // parts[2] TimeSpan/hours duration
                 // parts[3] Category (optional)
                 var parts = data.text.Split(' ');
                 data.text = parts.Length == 4 ? parts[3] : null;
                 string errMsg = null;
-                bool parsed_interval = int.TryParse(parts[1], out int intervals);
                 if (parts.Length != 4 && parts.Length != 3)
                     errMsg = "You did not have the right number of arguments to `!timer`.";
+                bool parsed_interval = double.TryParse(parts[1], out double intervald);
                 if (!TimeSpan.TryParse(parts[1], out TimeSpan interval) && !parsed_interval)
                     errMsg = $"`{parts[1]}` was not a valid TimeSpan.";
-                if (!int.TryParse(parts[2], out int count))
-                    errMsg = $"`{parts[2]}` was not a valid count.";
+                bool parsed_duration = double.TryParse(parts[2], out double durationd);
+                if (!TimeSpan.TryParse(parts[2], out TimeSpan duration) && !parsed_duration)
+                    errMsg = $"`{parts[2]}` was not a valid TimeSpan.";
                 if (errMsg != null)
                     return req.CreateResponse(
                         HttpStatusCode.OK,
@@ -116,16 +117,15 @@ namespace slack_functions
                         },
                         JsonMediaTypeFormatter.DefaultMediaType);
                 if (parsed_interval)
-                    interval = TimeSpan.FromSeconds(intervals);
-                logger.LogInformation("Category:{0} Interval:{1} Count{2}", data.text, interval, count);
+                    interval = TimeSpan.FromMinutes(intervald);
+                if (parsed_duration)
+                    duration = TimeSpan.FromHours(durationd);
+                logger.LogInformation("Category:{0} Interval:{1} Duration:{2}", data.text, interval, duration);
 
-                var duration = TimeSpan.FromSeconds(interval.TotalSeconds * count);
                 if (interval < TimeSpan.FromSeconds(30) || interval > TimeSpan.FromHours(24))
-                    errMsg = "TimeSpan must be between 30 seconds and 24 hours.";
-                else if (count <= 1 || count >= 50)
-                    errMsg = "Count must be greater than 1 and less than 50.";
+                    errMsg = "Interval must be between 30 seconds and 24 hours.";
                 else if (duration > TimeSpan.FromDays(7))
-                    errMsg = $"Count with interval cannot last more than 7 days. (Is currently `{duration}`)";
+                    errMsg = $"Duration cannot last more than 7 days. (Is currently `{duration}`)";
                 if (errMsg != null)
                     return req.CreateResponse(
                         HttpStatusCode.OK,
@@ -137,7 +137,8 @@ namespace slack_functions
                         JsonMediaTypeFormatter.DefaultMediaType);
 
                 // Now that we passed command validation, actually schedule the messages
-                for (int i = 1; i <= count; i++)
+                var count = (int)(duration.TotalSeconds / interval.TotalSeconds) + 1;
+                for (int i = 0; i <= count; i++)
                     await queue.AddMessageAsync(
                         new CloudQueueMessage(
                             JsonConvert.SerializeObject(
@@ -146,7 +147,7 @@ namespace slack_functions
                                     category = data.text,
                                     channel_id = data.channel_id,
                                     response_url = data.response_url,
-                                    user_name = data.user_name + $", timer {i}/{count}"
+                                    user_name = data.user_name + $", timer {i + 1}/{count}"
                                 })),
                         timeToLive: null,
                         initialVisibilityDelay: TimeSpan.FromSeconds(interval.TotalSeconds * i),
