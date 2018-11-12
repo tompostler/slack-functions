@@ -79,7 +79,7 @@ namespace slack_functions
                                 + "\n"
                                 + "To request a specific file, use that file's full name as returned by a previous message.\n"
                                 + "To get a status of how many images have been seen, ask for the special category of 'status'.\n"
-                                + "To schedule a bunch of messages, say `!timer interval duration [category]` where `interval` and `duration` are TimeSpans represented as HH:MM:SS or `interval` is the number of minutes between images and `duration` is simply the number of hours to run. (WARNING: There is no check for a valid category before scheduling all the images). Just `timer` also works.\n"
+                                + "To schedule a bunch of messages, say `!timer interval duration [category]` where `interval` and `duration` are TimeSpans represented as HH:MM:SS or numbers suffixed by the appropriate `d`, `h`, or `m` character. (WARNING: There is no check for a valid category before scheduling all the images). Just `timer` also works.\n"
                                 + "To reset a category for re-viewing, say `!reset category`.\n"
                                 + "\n"
                                 + "Otherwise, you can specify a category or leave it blank to default to a special category of 'all' (which looks at the distribution of images to pick an actual category).\n"
@@ -101,12 +101,10 @@ namespace slack_functions
                 string errMsg = null;
                 if (parts.Length != 4 && parts.Length != 3)
                     errMsg = "You did not have the right number of arguments to `!timer`.";
-                bool parsed_interval = double.TryParse(parts[1], out double intervald);
-                if (!TimeSpan.TryParse(parts[1], out TimeSpan interval) && !parsed_interval)
-                    errMsg = $"`{parts[1]}` was not a valid TimeSpan.";
-                bool parsed_duration = double.TryParse(parts[2], out double durationd);
-                if (!TimeSpan.TryParse(parts[2], out TimeSpan duration) && !parsed_duration)
-                    errMsg = $"`{parts[2]}` was not a valid TimeSpan.";
+                var int_parse = parts[1].GetTimeSpan();
+                if (!string.IsNullOrWhiteSpace(int_parse.msg)) errMsg = int_parse.msg;
+                var dur_parse = parts[2].GetTimeSpan();
+                if (!string.IsNullOrWhiteSpace(dur_parse.msg)) errMsg = dur_parse.msg;
                 if (errMsg != null)
                     return req.CreateResponse(
                         HttpStatusCode.OK,
@@ -116,16 +114,12 @@ namespace slack_functions
                             text = errMsg
                         },
                         JsonMediaTypeFormatter.DefaultMediaType);
-                if (parsed_interval)
-                    interval = TimeSpan.FromMinutes(intervald);
-                if (parsed_duration)
-                    duration = TimeSpan.FromHours(durationd);
-                logger.LogInformation("Category:{0} Interval:{1} Duration:{2}", data.text, interval, duration);
+                logger.LogInformation("Category:{0} Interval:{1} Duration:{2}", data.text, int_parse.parsed, dur_parse.parsed);
 
-                if (interval < TimeSpan.FromSeconds(30) || interval > TimeSpan.FromHours(24))
+                if (int_parse.parsed < TimeSpan.FromSeconds(30) || int_parse.parsed > TimeSpan.FromHours(24))
                     errMsg = "Interval must be between 30 seconds and 24 hours.";
-                else if (duration > TimeSpan.FromDays(7))
-                    errMsg = $"Duration cannot last more than 7 days. (Is currently `{duration}`)";
+                else if (dur_parse.parsed > TimeSpan.FromDays(7))
+                    errMsg = $"Duration cannot last more than 7 days. (Is currently `{dur_parse.parsed}`)";
                 if (errMsg != null)
                     return req.CreateResponse(
                         HttpStatusCode.OK,
@@ -137,7 +131,7 @@ namespace slack_functions
                         JsonMediaTypeFormatter.DefaultMediaType);
 
                 // Now that we passed command validation, actually schedule the messages
-                var count = (int)(duration.TotalSeconds / interval.TotalSeconds) + 1;
+                var count = (int)(dur_parse.parsed.TotalSeconds / int_parse.parsed.TotalSeconds) + 1;
                 for (int i = 0; i < count; i++)
                     await queue.AddMessageAsync(
                         new CloudQueueMessage(
@@ -150,7 +144,7 @@ namespace slack_functions
                                     user_name = data.user_name + $", timer {i + 1}/{count}"
                                 })),
                         timeToLive: null,
-                        initialVisibilityDelay: TimeSpan.FromSeconds(interval.TotalSeconds * i),
+                        initialVisibilityDelay: TimeSpan.FromSeconds(int_parse.parsed.TotalSeconds * i),
                         options: null,
                         operationContext: null);
 
@@ -160,7 +154,7 @@ namespace slack_functions
                     new
                     {
                         response_type = "in_channel",
-                        text = $"{data.user_name} has scheduled {count} images for the '{data.text}' category every {interval} for the next {duration}."
+                        text = $"{data.user_name} has scheduled {count} images for the '{data.text}' category every {int_parse.parsed} for the next {dur_parse.parsed}."
                     },
                     JsonMediaTypeFormatter.DefaultMediaType);
             }
@@ -208,6 +202,46 @@ namespace slack_functions
                             user_name = data.user_name
                         })));
             return req.CreateResponse(HttpStatusCode.OK, new { response_type = "in_channel" }, JsonMediaTypeFormatter.DefaultMediaType);
+        }
+
+        private static (string msg, TimeSpan parsed) GetTimeSpan(this string source)
+        {
+            // Look for the following formats:
+            //  ##d --> number of days
+            //  ##h --> number of hours
+            //  ##m --> number of minutes
+            //  HH:MM:SS --> regular timespan parsing
+
+            source = source.ToLower();
+            double parsed = 0;
+            if (source.Contains("m"))
+            {
+                if (double.TryParse(source.Replace("m", String.Empty), out parsed))
+                    return (null, TimeSpan.FromMinutes(parsed));
+                else
+                    return ($"Found a `m`, but couldn't parse minutes from '{source}'.", default);
+            }
+            else if (source.Contains("h"))
+            {
+                if (double.TryParse(source.Replace("h", String.Empty), out parsed))
+                    return (null, TimeSpan.FromHours(parsed));
+                else
+                    return ($"Found a `h`, but couldn't parse hours from '{source}'.", default);
+            }
+            else if (source.Contains("d"))
+            {
+                if (double.TryParse(source.Replace("d", String.Empty), out parsed))
+                    return (null, TimeSpan.FromDays(parsed));
+                else
+                    return ($"Found a `d`, but couldn't parse days from '{source}'.", default);
+            }
+            else
+            {
+                if (TimeSpan.TryParse(source, out TimeSpan parsedt))
+                    return (null, parsedt);
+                else
+                    return ($"Couldn't parse a `TimeSpan` from '{source}'.", default);
+            }
         }
 
         private static Dictionary<string, CloudBlobDirectory> DirectoriesInContainer;
