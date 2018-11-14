@@ -16,14 +16,13 @@ namespace slack_functions
     {
         [FunctionName(nameof(Rescan))]
         public static async Task Rescan(
-            // 7PM every day
             [TimerTrigger("0 0,30 0-1,19-23 * * *")]TimerInfo timer,
             ILogger logger)
         {
             Functions.PopulateDirectoriesInContainer(force: true);
 
             // Run through each populated directory and see if we have to create/update its config with file changes
-            var status = new Dictionary<string, string>();
+            var status = new Dictionary<string, (string, int, int)>();
             foreach (var dir in Functions.DirectoriesInContainer)
             {
                 var fileNames = new HashSet<string>(dir.Value.ListBlobs().Where(_ => _ is CloudBlob).Select(_ => (_ as CloudBlob).Name));
@@ -34,7 +33,7 @@ namespace slack_functions
                 {
                     logger.LogInformation("Creating configuration file {0}...", config.Name);
                     await config.UploadTextAsync(JsonConvert.SerializeObject(new DirectoryStatus { UnseenFiles = fileNames }));
-                    status.Add(dir.Key, "Created configuration file");
+                    status.Add(dir.Key, ("Created configuration file", 0, 0));
                     continue;
                 }
                 logger.LogInformation("Downloading configuration file {0}", config.Name);
@@ -45,10 +44,13 @@ namespace slack_functions
                 var extraSeen = ds.SeenFiles.Where(sf => !fileNames.Contains(sf)).ToList();
                 var extraUnseen = ds.UnseenFiles.Where(uf => !fileNames.Contains(uf)).ToList();
                 var newUnseen = fileNames.Where(fn => !ds.SeenFiles.Contains(fn) && !ds.UnseenFiles.Contains(fn)).ToList();
-                status.Add(dir.Key, $"-{extraSeen.Count} seen, -{extraUnseen.Count}/+{newUnseen.Count} unseen");
-                ds.SeenFiles.RemoveWhere(sf => extraSeen.Contains(sf));
-                ds.UnseenFiles.RemoveWhere(uf => extraUnseen.Contains(uf));
-                foreach (var nu in newUnseen) ds.UnseenFiles.Add(nu);
+                if (extraSeen.Count > 0 || extraUnseen.Count > 0 || newUnseen.Count > 0)
+                {
+                    status.Add(dir.Key, (null, extraSeen.Count + extraUnseen.Count, newUnseen.Count));
+                    ds.SeenFiles.RemoveWhere(sf => extraSeen.Contains(sf));
+                    ds.UnseenFiles.RemoveWhere(uf => extraUnseen.Contains(uf));
+                    foreach (var nu in newUnseen) ds.UnseenFiles.Add(nu);
+                }
 
                 // Write configuration back and release lease
                 logger.LogInformation("Uploading configuration file {0}...", config.Name);
@@ -63,12 +65,19 @@ namespace slack_functions
                 var sb = new StringBuilder();
                 var maxname = Math.Max(DirectoriesInContainer.Keys.Max(_ => _.Length), "CATEGORY".Length);
                 sb.AppendLine("```");
-                sb.AppendLine($"{"CATEGORY".PadRight(maxname)}  STATUS MESSAGE");
+                sb.AppendLine($"{"CATEGORY".PadRight(maxname)}  REMOVALS  ADDITIONS");
                 foreach (var stat in status)
                 {
-                    sb.Append(stat.Key);
+                    sb.Append(stat.Key.PadRight(maxname));
                     sb.Append("  ");
-                    sb.AppendLine(stat.Value);
+                    if (String.IsNullOrWhiteSpace(stat.Value.Item1))
+                    {
+                        sb.Append($"{stat.Value.Item2}".PadRight("REMOVALS".Length));
+                        sb.Append("  ");
+                        sb.Append($"{stat.Value.Item3}".PadRight("ADDITIONS".Length));
+                    }
+                    else
+                        sb.AppendLine(stat.Value.Item1);
                 }
                 sb.AppendLine("```");
 
