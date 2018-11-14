@@ -390,14 +390,27 @@ namespace slack_functions
             if (!await config.ExistsAsync())
             {
                 logger.LogInformation("Populating configuration file...");
-                if (request.category == "all")
+                if (DirectoriesInContainer.ContainsKey(request.category))
                 {
-                    // We are picking a category from all
-                    // Load all the categories and pick one of them based on unseen image distribution (for better results)
+                    var files = DirectoriesInContainer[request.category].ListBlobs().Where(_ => _ is CloudBlob).Select(_ => _ as CloudBlob);
+                    ds = new DirectoryStatus
+                    {
+                        UnseenFiles = new HashSet<string>(files.Select(_ => _.Name))
+                    };
+                }
+                else if (request.category == "all" || DirectoriesInContainer.Keys.Count(k => k.StartsWith(request.category)) > 0)
+                {
                     await PopulateUnseenCountInDirectories();
-                    int offset = Random.Next(UnseenCountInDirectories.Sum(kvp => kvp.Value));
+                    var categoryOptions = UnseenCountInDirectories;
+
+                    // Check for fuzzy matches or default to all
+                    if (DirectoriesInContainer.Keys.Count(k => k.StartsWith(request.category)) > 0)
+                        categoryOptions = UnseenCountInDirectories.Where(kvp => kvp.Key.StartsWith(request.category)).ToDictionary(_ => _.Key, _ => _.Value);
+
+                    // Pick one of them based on unseen image distribution (for better results)
+                    int offset = Random.Next(categoryOptions.Sum(kvp => kvp.Value));
                     string category = null;
-                    foreach (var kvp in UnseenCountInDirectories)
+                    foreach (var kvp in categoryOptions)
                     {
                         category = kvp.Key;
                         offset -= kvp.Value;
@@ -429,39 +442,6 @@ namespace slack_functions
                     {
                         UnseenFiles = new HashSet<string>(files.Select(_ => _.Name))
                     };
-                }
-                else if (DirectoriesInContainer.Keys.Count(k => k.StartsWith(request.category)) > 0)
-                {
-                    // We are letting fuzzy matching take care of it
-                    // Load all the matching categories and pick one of them based on image distribution (for better results)
-                    await PopulateUnseenCountInDirectories();
-                    var prunedOptions = UnseenCountInDirectories.Where(kvp => kvp.Key.StartsWith(request.category));
-                    int offset = Random.Next(prunedOptions.Sum(kvp => kvp.Value));
-                    string category = null;
-                    foreach (var kvp in prunedOptions)
-                    {
-                        category = kvp.Key;
-                        offset -= kvp.Value;
-                        if (offset <= 0)
-                            break;
-                    }
-
-                    config = ImageContainer.GetBlockBlobReference(category + ".json");
-                    if (await config.ExistsAsync())
-                    {
-                        logger.LogInformation("Downloading configuration file {0} for fuzzy match on {1}...", config.Name, request.category);
-                        leaseId = await config.AcquireLeaseAsync(TimeSpan.FromSeconds(45));
-                        ds = JsonConvert.DeserializeObject<DirectoryStatus>(await config.DownloadTextAsync());
-                    }
-                    else
-                    {
-                        logger.LogInformation("Creating configuration file {0} for fuzzy match on {1}...", config.Name, request.category);
-                        var files = DirectoriesInContainer[category].ListBlobs().Where(_ => _ is CloudBlob).Select(_ => _ as CloudBlob);
-                        ds = new DirectoryStatus
-                        {
-                            UnseenFiles = new HashSet<string>(files.Select(_ => _.Name))
-                        };
-                    }
                 }
                 else
                 {
