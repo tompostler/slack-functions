@@ -82,6 +82,7 @@ namespace slack_functions
                                 + "To get a status of how many images have been seen, ask for the special category of 'status'.\n"
                                 + "To schedule a bunch of messages, say `!timer interval duration [category]` where `interval` and `duration` are TimeSpans represented as HH:MM:SS or numbers suffixed by the appropriate `d`, `h`, or `m` character. (WARNING: There is no check for a valid category before scheduling all the images). Just `timer` also works.\n"
                                 + "To reset a category for re-viewing, say `!reset category`.\n"
+                                + "To force a rescan of available images, say `!rescan`.\n"
                                 + "\n"
                                 + "Otherwise, you can specify a category or leave it blank to default to a special category of 'all' (which looks at the distribution of images to pick an actual category).\n"
                                 + "\n"
@@ -175,20 +176,6 @@ namespace slack_functions
                         text = $"Resetting configuration for {category} was {(successful ? string.Empty : "un")}successful."
                     },
                     JsonMediaTypeFormatter.DefaultMediaType);
-            }
-
-            if (data.text == "!test")
-            {
-                logger.LogInformation("Hit !test");
-                var response = await HttpClient.PostAsJsonAsync(
-                    "https://slack.com/api/chat.postMessage",
-                    new
-                    {
-                        channel = data.channel_id,
-                        text = $"Random test {Random.Next()}"
-                    });
-                logger.LogInformation("Response body: {0}", await response.Content.ReadAsStringAsync());
-                data.text = null;
             }
 
             // Queue up the work and send back a response
@@ -380,6 +367,13 @@ namespace slack_functions
                     response_type = "in_channel",
                     text = sb.ToString()
                 });
+                return;
+            }
+
+            // If they ask for a rescan, then do it
+            if (request.category == "!rescan")
+            {
+                await Functions.Rescan(logger);
                 return;
             }
 

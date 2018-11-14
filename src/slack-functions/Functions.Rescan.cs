@@ -15,9 +15,15 @@ namespace slack_functions
     public static partial class Functions
     {
         [FunctionName(nameof(Rescan))]
-        public static async Task Rescan(
-            [TimerTrigger("0 0,30 0-1,19-23 * * *")]TimerInfo timer,
+        public static Task Rescan(
+            // Every night at 7 and 11
+            [TimerTrigger("0 0 19,23 * * *")]TimerInfo timer,
             ILogger logger)
+        {
+            return Functions.Rescan(logger);
+        }
+
+        public static async Task Rescan(ILogger logger)
         {
             Functions.PopulateDirectoriesInContainer(force: true);
 
@@ -91,7 +97,7 @@ namespace slack_functions
                         channel = Functions.SlackNotifyChannelId,
                         text = sb.ToString()
                     });
-                logger.LogInformation("{0} response: {1} {2}", nameof(Rescan), res.StatusCode, await res.Content.ReadAsStringAsync());
+                logger.LogInformation("{0} response: {1} {2}", nameof(RescanTrigger), res.StatusCode, await res.Content.ReadAsStringAsync());
             }
         }
     }
