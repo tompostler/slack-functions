@@ -50,11 +50,13 @@ namespace slack_functions
                     ds.SeenFiles.RemoveWhere(sf => extraSeen.Contains(sf));
                     ds.UnseenFiles.RemoveWhere(uf => extraUnseen.Contains(uf));
                     foreach (var nu in newUnseen) ds.UnseenFiles.Add(nu);
+
+                    // Write configuration back
+                    logger.LogInformation("Uploading configuration file {0}...", config.Name);
+                    await config.UploadTextAsync(JsonConvert.SerializeObject(ds), Encoding.UTF8, AccessCondition.GenerateLeaseCondition(leaseId), new BlobRequestOptions(), new OperationContext());
                 }
 
-                // Write configuration back and release lease
-                logger.LogInformation("Uploading configuration file {0}...", config.Name);
-                await config.UploadTextAsync(JsonConvert.SerializeObject(ds), Encoding.UTF8, AccessCondition.GenerateLeaseCondition(leaseId), new BlobRequestOptions(), new OperationContext());
+                // Make sure we release the lease
                 await config.ReleaseLeaseAsync(AccessCondition.GenerateLeaseCondition(leaseId));
             }
 
@@ -63,7 +65,7 @@ namespace slack_functions
             if (!String.IsNullOrWhiteSpace(Functions.SlackNotifyChannelId) && status.Count > 0)
             {
                 var sb = new StringBuilder();
-                var maxname = Math.Max(DirectoriesInContainer.Keys.Max(_ => _.Length), "CATEGORY".Length);
+                var maxname = Math.Max(status.Keys.Max(_ => _.Length), "CATEGORY".Length);
                 sb.AppendLine("```");
                 sb.AppendLine($"{"CATEGORY".PadRight(maxname)}  REMOVALS  ADDITIONS");
                 foreach (var stat in status)
@@ -72,9 +74,9 @@ namespace slack_functions
                     sb.Append("  ");
                     if (String.IsNullOrWhiteSpace(stat.Value.Item1))
                     {
-                        sb.Append($"{stat.Value.Item2}".PadRight("REMOVALS".Length));
+                        sb.Append($"{stat.Value.Item2}".PadLeft("REMOVALS".Length));
                         sb.Append("  ");
-                        sb.Append($"{stat.Value.Item3}".PadRight("ADDITIONS".Length));
+                        sb.Append($"{stat.Value.Item3}".PadLeft("ADDITIONS".Length));
                     }
                     else
                         sb.AppendLine(stat.Value.Item1);
