@@ -19,12 +19,13 @@ using System.Threading.Tasks;
 
 namespace slack_functions
 {
-    public static class Functions
+    public static partial class Functions
     {
         private static string StoreConn => ConfigurationManager.AppSettings.Get("StorageConnection");
         private static string StoreIConn => ConfigurationManager.AppSettings.Get("StorageIConnection");
         private static string SlackToken => ConfigurationManager.AppSettings.Get("SlackTokenImg");
         private static string SlackOauthToken => ConfigurationManager.AppSettings.Get("SlackOauthToken");
+        private static string SlackNotifyChannelId => ConfigurationManager.AppSettings.Get("SlackNotifyChannelId");
         private static bool DebugFlag => bool.TryParse(ConfigurationManager.AppSettings.Get("Debug"), out bool t) && t;
 
         private static HttpClient HttpClient = new HttpClient();
@@ -245,14 +246,15 @@ namespace slack_functions
         }
 
         private static Dictionary<string, CloudBlobDirectory> DirectoriesInContainer;
-        private static void PopulateDirectoriesInContainer()
+        private static void PopulateDirectoriesInContainer(bool force = false)
         {
             // If directories in container is null, populate
-            if (DirectoriesInContainer == null)
+            if (DirectoriesInContainer == null || force)
             {
-                DirectoriesInContainer = new Dictionary<string, CloudBlobDirectory>();
+                var dic = new Dictionary<string, CloudBlobDirectory>();
                 foreach (var cbd in ImageContainer.ListBlobs().Where(_ => _ is CloudBlobDirectory).Select(_ => _ as CloudBlobDirectory))
-                    DirectoriesInContainer.Add(cbd.Prefix.Substring(0, cbd.Prefix.Length - 1), cbd);
+                    dic.Add(cbd.Prefix.Substring(0, cbd.Prefix.Length - 1), cbd);
+                DirectoriesInContainer = dic;
             }
         }
 
@@ -316,6 +318,11 @@ namespace slack_functions
                     var dirstatus = JsonConvert.DeserializeObject<DirectoryStatus>(await dirconfig.DownloadTextAsync());
                     sb.Append(directory.PadRight(maxname));
                     sb.Append("  ");
+                    if (dirstatus.SeenFiles.Count == 0)
+                    {
+                        sb.AppendLine("NOT YET QUERIED");
+                        continue;
+                    }
                     sb.Append($"{dirstatus.SeenFiles.Count,4}");
                     totals.SeenCount += dirstatus.SeenFiles.Count;
                     sb.Append("  ");

@@ -20,6 +20,12 @@
         "description": "Slack OAuth Token inserted by the release."
       }
     },
+    "pSlackNotifyChannelId": {
+      "type": "string",
+      "metadata": {
+        "description": "Slack Channel ID for notifications inserted by the release."
+      }
+    },
     "packageLink": {
       "type": "string"
     },
@@ -119,6 +125,10 @@
             {
               "name": "SlackOauthToken",
               "value": "[parameters('pSlackOauthToken')]"
+            },
+            {
+              "name": "SlackNotifyChannelId",
+              "value": "[parameters('pSlackNotifyChannelId')]"
             },
             {
               "name": "Debug",
