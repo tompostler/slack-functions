@@ -258,6 +258,35 @@ namespace slack_functions
             }
         }
 
+        private static Dictionary<string, int> UnseenCountInDirectories;
+        private static DateTimeOffset UnseenCountInDirectoriesExpirationTime = DateTimeOffset.MinValue;
+        private static async Task PopulateUnseenCountInDirectories()
+        {
+            // This will scan/update at most every 15 minutes or every service start
+            if (UnseenCountInDirectoriesExpirationTime < DateTimeOffset.Now)
+            {
+                PopulateDirectoriesInContainer();
+                UnseenCountInDirectories = new Dictionary<string, int>();
+
+                foreach (var dir in DirectoriesInContainer)
+                {
+                    var config = Functions.ImageContainer.GetBlockBlobReference(dir.Key + ".json");
+
+                    // No config, just add all the blobs
+                    if (!await config.ExistsAsync())
+                    {
+                        var blobNames = dir.Value.ListBlobs().Where(_ => _ is CloudBlob).Select(_ => _ as CloudBlob);
+                        UnseenCountInDirectories.Add(dir.Key, blobNames.Count());
+                        continue;
+                    }
+
+                    var ds = JsonConvert.DeserializeObject<DirectoryStatus>(await config.DownloadTextAsync());
+                    UnseenCountInDirectories.Add(dir.Key, ds.UnseenFiles.Count);
+                }
+                UnseenCountInDirectoriesExpirationTime = DateTimeOffset.Now.AddMinutes(15);
+            }
+        }
+
         [FunctionName(nameof(ProcessImageWebhookAsync))]
         public static async Task ProcessImageWebhookAsync(
             [QueueTrigger("request", Connection = "StorageConnection")]Messages.Request request,
@@ -364,10 +393,18 @@ namespace slack_functions
                 if (request.category == "all")
                 {
                     // We are picking a category from all
-                    // Load all the categories and pick one of them based on image distribution (for better results)
-                    //TODO: compare it based off of unseen images instead of images in the dirs
-                    var dist = DirectoriesInContainer.SelectMany(dic => dic.Value.ListBlobs().Where(_ => _ is CloudBlob).Select(_ => dic.Key));
-                    var category = dist.ElementAt(Random.Next(dist.Count()));
+                    // Load all the categories and pick one of them based on unseen image distribution (for better results)
+                    await PopulateUnseenCountInDirectories();
+                    int offset = Random.Next(UnseenCountInDirectories.Sum(kvp => kvp.Value));
+                    string category = null;
+                    foreach (var kvp in UnseenCountInDirectories)
+                    {
+                        category = kvp.Key;
+                        offset -= kvp.Value;
+                        if (offset <= 0)
+                            break;
+                    }
+
                     config = ImageContainer.GetBlockBlobReference(category + ".json");
                     if (await config.ExistsAsync())
                     {
@@ -397,11 +434,18 @@ namespace slack_functions
                 {
                     // We are letting fuzzy matching take care of it
                     // Load all the matching categories and pick one of them based on image distribution (for better results)
-                    //TODO: compare it based off of unseen images instead of images in the dirs
-                    var dist = DirectoriesInContainer
-                        .Where(dic => dic.Key.StartsWith(request.category))
-                        .SelectMany(dic => dic.Value.ListBlobs().Where(_ => _ is CloudBlob).Select(_ => dic.Key));
-                    var category = dist.ElementAt(Random.Next(dist.Count()));
+                    await PopulateUnseenCountInDirectories();
+                    var prunedOptions = UnseenCountInDirectories.Where(kvp => kvp.Key.StartsWith(request.category));
+                    int offset = Random.Next(prunedOptions.Sum(kvp => kvp.Value));
+                    string category = null;
+                    foreach (var kvp in prunedOptions)
+                    {
+                        category = kvp.Key;
+                        offset -= kvp.Value;
+                        if (offset <= 0)
+                            break;
+                    }
+
                     config = ImageContainer.GetBlockBlobReference(category + ".json");
                     if (await config.ExistsAsync())
                     {
