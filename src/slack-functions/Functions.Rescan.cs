@@ -16,8 +16,8 @@ namespace slack_functions
     {
         [FunctionName(nameof(Rescan))]
         public static Task Rescan(
-            // Every night at 7 and 11
-            [TimerTrigger("0 0 19,23 * * *")]TimerInfo timer,
+            // Every night at 7, 9, 11, and 1
+            [TimerTrigger("0 0 19,21,23,1 * * *")]TimerInfo timer,
             ILogger logger)
         {
             return Functions.Rescan(logger);
