@@ -83,6 +83,7 @@ namespace slack_functions
                         sb.Append($"{stat.Value.Item2}".PadLeft("REMOVALS".Length));
                         sb.Append("  ");
                         sb.Append($"{stat.Value.Item3}".PadLeft("ADDITIONS".Length));
+                        sb.AppendLine();
                     }
                     else
                         sb.AppendLine(stat.Value.Item1);
