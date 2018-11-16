@@ -97,7 +97,7 @@ namespace slack_functions
                         channel = Functions.SlackNotifyChannelId,
                         text = sb.ToString()
                     });
-                logger.LogInformation("{0} response: {1} {2}", nameof(RescanTrigger), res.StatusCode, await res.Content.ReadAsStringAsync());
+                logger.LogInformation("{0} response: {1} {2}", nameof(Rescan), res.StatusCode, await res.Content.ReadAsStringAsync());
             }
         }
     }
