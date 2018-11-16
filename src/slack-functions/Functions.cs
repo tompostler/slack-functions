@@ -84,7 +84,7 @@ namespace slack_functions
                                 + "To reset a category for re-viewing, say `!reset category`.\n"
                                 + "To force a rescan of available images, say `!rescan`.\n"
                                 + "\n"
-                                + "Otherwise, you can specify a category or leave it blank to default to a special category of 'all' (which looks at the distribution of images to pick an actual category).\n"
+                                + "Otherwise, you can specify a category, multiple space-separated categories, or leave it blank to default to a special category of 'all' (which looks at the distribution of images to pick an actual category).\n"
                                 + "\n"
                                 + "Available categories: `" + string.Join("`, `", DirectoriesInContainer.Keys) + "`"
                     },
@@ -97,12 +97,20 @@ namespace slack_functions
                 // parts[0] !timer/timer
                 // parts[1] TimeSpan/minutes interval
                 // parts[2] TimeSpan/hours duration
-                // parts[3] Category (optional)
+                // parts[3]... Category(ies) (optional)
                 var parts = data.text.Split(' ');
-                data.text = parts.Length == 4 ? parts[3] : null;
+                data.text = parts.Length > 3 ? String.Join(" ", parts, 3, parts.Length - 3) : null;
+                if (parts.Length < 3)
+                    return req.CreateResponse(
+                        HttpStatusCode.OK,
+                        new
+                        {
+                            response_type = "in_channel",
+                            text = "You did not have the right number of arguments to `!timer`."
+                        },
+                        JsonMediaTypeFormatter.DefaultMediaType);
+
                 string errMsg = null;
-                if (parts.Length != 4 && parts.Length != 3)
-                    errMsg = "You did not have the right number of arguments to `!timer`.";
                 var int_parse = parts[1].GetTimeSpan();
                 if (!string.IsNullOrWhiteSpace(int_parse.msg)) errMsg = int_parse.msg;
                 var dur_parse = parts[2].GetTimeSpan();
@@ -392,14 +400,25 @@ namespace slack_functions
                         UnseenFiles = new HashSet<string>(files.Select(_ => _.Name))
                     };
                 }
-                else if (request.category == "all" || DirectoriesInContainer.Keys.Count(k => k.StartsWith(request.category)) > 0)
+                else if (request.category == "all" || DirectoriesInContainer.Keys.Count(k => k.StartsWith(request.category.Substring(0, 1))) > 0)
                 {
                     await PopulateUnseenCountInDirectories();
                     var categoryOptions = UnseenCountInDirectories;
 
+                    // If there's a space in the category, then they're asking for multiple (potentially fuzzy) matches
+                    if (request.category.Contains(" "))
+                    {
+                        var fuzzyCategories = request.category.Split(new[] { ' ' }, StringSplitOptions.RemoveEmptyEntries);
+                        var matchedCategories = new HashSet<string>();
+                        foreach (var fuzzyCategory in fuzzyCategories)
+                            foreach (var categoryOption in categoryOptions.Keys.Where(k => k.StartsWith(fuzzyCategory)))
+                                matchedCategories.Add(categoryOption);
+                        categoryOptions = UnseenCountInDirectories.Where(kvp => matchedCategories.Contains(kvp.Key)).ToDictionary(_ => _.Key, _ => _.Value);
+                    }
                     // Check for fuzzy matches or default to all
-                    if (DirectoriesInContainer.Keys.Count(k => k.StartsWith(request.category)) > 0)
+                    else if (DirectoriesInContainer.Keys.Count(k => k.StartsWith(request.category)) > 0)
                         categoryOptions = UnseenCountInDirectories.Where(kvp => kvp.Key.StartsWith(request.category)).ToDictionary(_ => _.Key, _ => _.Value);
+                    logger.LogInformation("Categories to select from: {0}", JsonConvert.SerializeObject(categoryOptions));
 
                     // Pick one of them based on unseen image distribution (for better results)
                     int offset = Random.Next(categoryOptions.Sum(kvp => kvp.Value));
@@ -410,6 +429,17 @@ namespace slack_functions
                         offset -= kvp.Value;
                         if (offset <= 0)
                             break;
+                    }
+
+                    // Make sure we were able to match something
+                    if (category == null)
+                    {
+                        await HttpClient.PostAsJsonAsync(request.response_url, new
+                        {
+                            response_type = "in_channel",
+                            text = "Could not determine any valid categories from that. Please try again."
+                        });
+                        return;
                     }
 
                     config = ImageContainer.GetBlockBlobReference(category + ".json");
