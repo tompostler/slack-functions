@@ -522,7 +522,7 @@ namespace slack_functions
             }
             while (!await blob.ExistsAsync());
 
-            await SendImageToSlack(request.category, request.user_name, request.channel_id, blob, logger);
+            await SendImageToSlack(request.category, request.user_name, request.channel_id, blob, logger, responseChance);
 
             // Write configuration back and release lease
             logger.LogInformation("Uploading configuration file...");
