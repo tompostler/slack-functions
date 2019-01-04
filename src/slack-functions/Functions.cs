@@ -389,6 +389,7 @@ namespace slack_functions
             var config = ImageContainer.GetBlockBlobReference(request.category + ".json");
             string leaseId = null;
             DirectoryStatus ds;
+            string responseChance = null;
             if (!await config.ExistsAsync())
             {
                 logger.LogInformation("Populating configuration file...");
@@ -421,14 +422,18 @@ namespace slack_functions
                     logger.LogInformation("Categories to select from: {0}", JsonConvert.SerializeObject(categoryOptions));
 
                     // Pick one of them based on unseen image distribution (for better results)
-                    int offset = Random.Next(categoryOptions.Sum(kvp => kvp.Value));
+                    var totalUnseen = categoryOptions.Sum(kvp => kvp.Value);
+                    int offset = Random.Next(totalUnseen);
                     string category = null;
                     foreach (var kvp in categoryOptions)
                     {
                         category = kvp.Key;
                         offset -= kvp.Value;
                         if (offset <= 0)
+                        {
+                            responseChance = (kvp.Value * 1.0 / totalUnseen).ToString("p");
                             break;
+                        }
                     }
 
                     // Make sure we were able to match something
@@ -530,7 +535,7 @@ namespace slack_functions
             }
         }
 
-        private static async Task SendImageToSlack(string request_text, string user_name, string channel_id, CloudBlob blob, ILogger logger)
+        private static async Task SendImageToSlack(string request_text, string user_name, string channel_id, CloudBlob blob, ILogger logger, string responseChance = null)
         {
             // Acquire SAS token
             logger.LogInformation("Acquiring a SAS...");
@@ -551,7 +556,7 @@ namespace slack_functions
                     {
                         new
                         {
-                            pretext = $"Request: '{request_text}' ({user_name})\nResponse: {blob.Name}",
+                            pretext = $"Request: '{request_text}' ({user_name})\nResponse: {blob.Name}{(responseChance == null ? string.Empty : "\nResponse category chance: " + responseChance)}",
                             image_url = blob.Uri.AbsoluteUri + sas
                         }
                     }
