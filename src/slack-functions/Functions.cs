@@ -381,7 +381,7 @@ namespace slack_functions
             // If they ask for a rescan, then do it
             if (request.category == "!rescan")
             {
-                await Functions.Rescan(logger);
+                await Functions.RescanInternal(logger);
                 return;
             }
 

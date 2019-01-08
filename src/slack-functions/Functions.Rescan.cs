@@ -20,10 +20,10 @@ namespace slack_functions
             [TimerTrigger("0 0 19,21,23,1 * * *")]TimerInfo timer,
             ILogger logger)
         {
-            return Functions.Rescan(logger);
+            return Functions.RescanInternal(logger);
         }
 
-        public static async Task Rescan(ILogger logger)
+        private static async Task RescanInternal(ILogger logger)
         {
             Functions.PopulateDirectoriesInContainer(force: true);
 
