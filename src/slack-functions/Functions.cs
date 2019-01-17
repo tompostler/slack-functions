@@ -101,14 +101,10 @@ namespace slack_functions
                 var parts = data.text.Split(' ');
                 data.text = parts.Length > 3 ? String.Join(" ", parts, 3, parts.Length - 3) : null;
                 if (parts.Length < 3)
-                    return req.CreateResponse(
-                        HttpStatusCode.OK,
-                        new
-                        {
-                            response_type = "in_channel",
-                            text = "You did not have the right number of arguments to `!timer`."
-                        },
-                        JsonMediaTypeFormatter.DefaultMediaType);
+                {
+                    await SendMessageToSlack(data.channel_id, "You did not have the right number of arguments to `!timer`.", logger);
+                    return req.CreateResponse(HttpStatusCode.OK, new { response_type = "in_channel" });
+                }
 
                 string errMsg = null;
                 var int_parse = parts[1].GetTimeSpan();
@@ -116,14 +112,10 @@ namespace slack_functions
                 var dur_parse = parts[2].GetTimeSpan();
                 if (!string.IsNullOrWhiteSpace(dur_parse.msg)) errMsg = dur_parse.msg;
                 if (errMsg != null)
-                    return req.CreateResponse(
-                        HttpStatusCode.OK,
-                        new
-                        {
-                            response_type = "in_channel",
-                            text = errMsg
-                        },
-                        JsonMediaTypeFormatter.DefaultMediaType);
+                {
+                    await SendMessageToSlack(data.channel_id, errMsg, logger);
+                    return req.CreateResponse(HttpStatusCode.OK, new { response_type = "in_channel" });
+                }
                 logger.LogInformation("Category:{0} Interval:{1} Duration:{2}", data.text, int_parse.parsed, dur_parse.parsed);
 
                 if (int_parse.parsed < TimeSpan.FromSeconds(30) || int_parse.parsed > TimeSpan.FromHours(24))
@@ -131,14 +123,10 @@ namespace slack_functions
                 else if (dur_parse.parsed > TimeSpan.FromDays(7))
                     errMsg = $"Duration cannot last more than 7 days. (Is currently `{dur_parse.parsed}`)";
                 if (errMsg != null)
-                    return req.CreateResponse(
-                        HttpStatusCode.OK,
-                        new
-                        {
-                            response_type = "in_channel",
-                            text = errMsg
-                        },
-                        JsonMediaTypeFormatter.DefaultMediaType);
+                {
+                    await SendMessageToSlack(data.channel_id, errMsg, logger);
+                    return req.CreateResponse(HttpStatusCode.OK, new { response_type = "in_channel" });
+                }
 
                 // Now that we passed command validation, actually schedule the messages
                 var count = (int)(dur_parse.parsed.TotalSeconds / int_parse.parsed.TotalSeconds) + 1;
@@ -159,14 +147,8 @@ namespace slack_functions
                         operationContext: null);
 
                 // Inform of the configuration
-                return req.CreateResponse(
-                    HttpStatusCode.OK,
-                    new
-                    {
-                        response_type = "in_channel",
-                        text = $"{data.user_name} has scheduled {count} images for the '{data.text}' category every {int_parse.parsed} for the next {dur_parse.parsed}."
-                    },
-                    JsonMediaTypeFormatter.DefaultMediaType);
+                await SendMessageToSlack(data.channel_id, $"{data.user_name} has scheduled {count} images for the '{data.text}' category every {int_parse.parsed} for the next {dur_parse.parsed}.", logger);
+                return req.CreateResponse(HttpStatusCode.OK, new { response_type = "in_channel" });
             }
 
             if (data.text.StartsWith("!reset"))
@@ -176,14 +158,8 @@ namespace slack_functions
                 var successful = await config.DeleteIfExistsAsync();
 
                 // Inform of the configuration
-                return req.CreateResponse(
-                    HttpStatusCode.OK,
-                    new
-                    {
-                        response_type = "in_channel",
-                        text = $"Resetting configuration for {category} was {(successful ? string.Empty : "un")}successful."
-                    },
-                    JsonMediaTypeFormatter.DefaultMediaType);
+                await SendMessageToSlack(data.channel_id, $"Resetting configuration for {category} was {(successful ? string.Empty : "un")}successful.", logger);
+                return req.CreateResponse(HttpStatusCode.OK, new { response_type = "in_channel" });
             }
 
             // Queue up the work and send back a response
@@ -197,7 +173,7 @@ namespace slack_functions
                             response_url = data.response_url,
                             user_name = data.user_name
                         })));
-            return req.CreateResponse(HttpStatusCode.OK, new { response_type = "in_channel" }, JsonMediaTypeFormatter.DefaultMediaType);
+            return req.CreateResponse(HttpStatusCode.OK, new { response_type = "in_channel" });
         }
 
         private static (string msg, TimeSpan parsed) GetTimeSpan(this string source)
@@ -562,6 +538,12 @@ namespace slack_functions
                     }
                 });
             logger.LogInformation("{0} response: {1} {2}", nameof(SendImageToSlack), res.StatusCode, await res.Content.ReadAsStringAsync());
+        }
+
+        private static async Task SendMessageToSlack(string channel, string text, ILogger logger)
+        {
+            var res = await HttpClient.PostAsJsonAsync("https://slack.com/api/chat.postMessage", new { channel, text });
+            logger.LogInformation("{0} response: {1} {2}", nameof(SendMessageToSlack), res.StatusCode, await res.Content.ReadAsStringAsync());
         }
     }
 }
