@@ -203,7 +203,7 @@ namespace slack_functions
                     return req.CreateResponse(HttpStatusCode.OK, new { response_type = "in_channel" });
                 }
 
-                var delays = new List<TimeSpan> { TimeSpan.Zero }.Union(schedule.GetNextOccurrences(DateTime.UtcNow, DateTime.UtcNow + dur_parse.parsed).Select(dt => dt - DateTime.UtcNow)).ToList();
+                var delays = new List<TimeSpan> { TimeSpan.Zero }.Union(schedule.GetNextOccurrences(DateTime.Now, DateTime.Now + dur_parse.parsed).Select(dt => dt - DateTime.Now)).ToList();
                 for (int i = 0; i < delays.Count - 1; i++)
                 {
                     var diff = delays[i + 1] - delays[i];
