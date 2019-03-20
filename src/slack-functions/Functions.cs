@@ -81,6 +81,7 @@ namespace slack_functions
                                 + "To request a specific file, use that file's full name as returned by a previous message.\n"
                                 + "To get a status of how many images have been seen, ask for the special category of 'status'.\n"
                                 + "To schedule a bunch of messages, say `!timer interval duration [category]` where `interval` and `duration` are TimeSpans represented as HH:MM:SS or numbers suffixed by the appropriate `d`, `h`, or `m` character. (WARNING: There is no check for a valid category before scheduling all the images). Just `timer` also works.\n"
+                                + "To schedule a bunch of messages in a more rigid way, say `!cron expression duration [category]` where `expression` is a backtick'd cron expression and `duration` is the same as `!timer`. (WARNING: There is no check for a valid category before scheduling all the images). Just `cron` also works.\n"
                                 + "To reset a category for re-viewing, say `!reset category`.\n"
                                 + "To force a rescan of available images, say `!rescan`.\n"
                                 + "\n"
@@ -99,7 +100,7 @@ namespace slack_functions
                 // parts[2] TimeSpan/hours duration
                 // parts[3]... Category(ies) (optional)
                 var parts = data.text.Split(' ');
-                data.text = parts.Length > 3 ? String.Join(" ", parts, 3, parts.Length - 3) : null;
+                data.text = parts.Length > 3 ? string.Join(" ", parts, 3, parts.Length - 3) : null;
                 if (parts.Length < 3)
                 {
                     await SendMessageToSlack(data.channel_id, "You did not have the right number of arguments to `!timer`.", logger);
@@ -148,6 +149,89 @@ namespace slack_functions
 
                 // Inform of the configuration
                 await SendMessageToSlack(data.channel_id, $"{data.user_name} has scheduled {count} images for the '{data.text}' category every {int_parse.parsed} for the next {dur_parse.parsed}.", logger);
+                return req.CreateResponse(HttpStatusCode.OK, new { response_type = "in_channel" });
+            }
+
+            // If category is !cron, then do the cron
+            if (data.text.StartsWith("!cron") || data.text.StartsWith("cron"))
+            {
+                // parts[0] !cron/cron `
+                // parts[1] expression
+                // parts[2] ` TimeSpan/hours duration Category(ies) (optional)
+                var parts = data.text.Split('`');
+                if (parts.Length < 2)
+                {
+                    await SendMessageToSlack(data.channel_id, "You did not have the right number of arguments to `!cron`.", logger);
+                    return req.CreateResponse(HttpStatusCode.OK, new { response_type = "in_channel" });
+                }
+                var expression = parts[1];
+                data.text = data.text.Replace(expression, string.Empty);
+
+                // parts[0] !cron/cron
+                // parts[1] ``
+                // parts[2] TimeSpan/hours duration
+                // parts[3]... Category(ies) (optional)
+                data.text = parts.Length > 2 ? string.Join(" ", parts, 2, parts.Length - 2) : null;
+                if (parts.Length < 3)
+                {
+                    await SendMessageToSlack(data.channel_id, "You did not have the right number of arguments to `!cron`.", logger);
+                    return req.CreateResponse(HttpStatusCode.OK, new { response_type = "in_channel" });
+                }
+
+                var schedule = NCrontab.CrontabSchedule.TryParse(expression);
+                if (schedule == null)
+                {
+                    await SendMessageToSlack(data.channel_id, $"Could not parse your expression: {parts[1]}", logger);
+                    return req.CreateResponse(HttpStatusCode.OK, new { response_type = "in_channel" });
+                }
+
+                string errMsg = null;
+                var dur_parse = parts[2].GetTimeSpan();
+                if (!string.IsNullOrWhiteSpace(dur_parse.msg)) errMsg = dur_parse.msg;
+                if (errMsg != null)
+                {
+                    await SendMessageToSlack(data.channel_id, errMsg, logger);
+                    return req.CreateResponse(HttpStatusCode.OK, new { response_type = "in_channel" });
+                }
+                logger.LogInformation("Category:{0} Duration:{2}", data.text, dur_parse.parsed);
+                if (dur_parse.parsed > TimeSpan.FromDays(7))
+                    errMsg = $"Duration cannot last more than 7 days. (Is currently `{dur_parse.parsed}`)";
+                if (errMsg != null)
+                {
+                    await SendMessageToSlack(data.channel_id, errMsg, logger);
+                    return req.CreateResponse(HttpStatusCode.OK, new { response_type = "in_channel" });
+                }
+
+                var delays = new List<TimeSpan> { TimeSpan.Zero }.Union(schedule.GetNextOccurrences(DateTime.UtcNow, DateTime.UtcNow + dur_parse.parsed).Select(dt => dt - DateTime.UtcNow)).ToList();
+                for (int i = 0; i < delays.Count - 1; i++)
+                {
+                    var diff = delays[i + 1] - delays[i];
+                    if (diff < TimeSpan.FromSeconds(30) || diff > TimeSpan.FromHours(24))
+                    {
+                        await SendMessageToSlack(data.channel_id, "Interval must be between 30 seconds and 24 hours.", logger);
+                        return req.CreateResponse(HttpStatusCode.OK, new { response_type = "in_channel" });
+                    }
+                }
+
+                // Now that we passed command validation, actually schedule the messages
+                for (int i = 0; i < delays.Count; i++)
+                    await queue.AddMessageAsync(
+                        new CloudQueueMessage(
+                            JsonConvert.SerializeObject(
+                                new Messages.Request
+                                {
+                                    category = data.text,
+                                    channel_id = data.channel_id,
+                                    response_url = data.response_url,
+                                    user_name = data.user_name + $", cron {i + 1}/{delays.Count}"
+                                })),
+                        timeToLive: null,
+                        initialVisibilityDelay: delays[i],
+                        options: null,
+                        operationContext: null);
+
+                // Inform of the configuration
+                await SendMessageToSlack(data.channel_id, $"{data.user_name} has scheduled {delays.Count} images for the '{data.text}' category with expression `{schedule}` for the next {dur_parse.parsed}.", logger);
                 return req.CreateResponse(HttpStatusCode.OK, new { response_type = "in_channel" });
             }
 
