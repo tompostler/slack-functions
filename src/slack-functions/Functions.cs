@@ -172,7 +172,7 @@ namespace slack_functions
                 // parts[1] ``
                 // parts[2] TimeSpan/hours duration
                 // parts[3]... Category(ies) (optional)
-                data.text = parts.Length > 2 ? string.Join(" ", parts, 2, parts.Length - 2) : null;
+                data.text = parts.Length > 3 ? string.Join(" ", parts, 3, parts.Length - 3) : null;
                 if (parts.Length < 3)
                 {
                     await SendMessageToSlack(data.channel_id, "You did not have the right number of arguments to `!cron`.", logger);
