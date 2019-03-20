@@ -82,6 +82,7 @@ namespace slack_functions
                                 + "To get a status of how many images have been seen, ask for the special category of 'status'.\n"
                                 + "To schedule a bunch of messages, say `!timer interval duration [category]` where `interval` and `duration` are TimeSpans represented as HH:MM:SS or numbers suffixed by the appropriate `d`, `h`, or `m` character. (WARNING: There is no check for a valid category before scheduling all the images). Just `timer` also works.\n"
                                 + "To schedule a bunch of messages in a more rigid way, say `!cron expression duration [category]` where `expression` is a backtick'd cron expression and `duration` is the same as `!timer`. (WARNING: There is no check for a valid category before scheduling all the images). Just `cron` also works.\n"
+                                + "(In case you forgot, cron is `min hour dom mon dow`)\n"
                                 + "To reset a category for re-viewing, say `!reset category`.\n"
                                 + "To force a rescan of available images, say `!rescan`.\n"
                                 + "\n"
