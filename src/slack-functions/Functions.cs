@@ -28,9 +28,9 @@ namespace slack_functions
         private static string SlackNotifyChannelId => ConfigurationManager.AppSettings.Get("SlackNotifyChannelId");
         private static bool DebugFlag => bool.TryParse(ConfigurationManager.AppSettings.Get("Debug"), out bool t) && t;
 
-        private static HttpClient HttpClient = new HttpClient();
-        private static Random Random = new Random();
-        private static CloudBlobContainer ImageContainer;
+        private static readonly HttpClient HttpClient = new HttpClient();
+        private static readonly Random Random = new Random();
+        private static readonly CloudBlobContainer ImageContainer;
 
         static Functions()
         {
