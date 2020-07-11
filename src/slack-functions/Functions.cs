@@ -263,7 +263,7 @@ namespace slack_functions
                 }
                 logger.LogInformation("Category:{0} Count:{1} Duration:{2}", data.text, cnt_parsed, dur_parse.parsed);
 
-                if (dur_parse.parsed.TotalMinutes / cnt_parsed > 5)
+                if (dur_parse.parsed.TotalMinutes / cnt_parsed <= 5)
                     errMsg = "Cannot randomize more than 1 image per 5 minutes.";
                 else if (dur_parse.parsed > TimeSpan.FromDays(7))
                     errMsg = $"Duration cannot last more than 7 days. (Is currently `{dur_parse.parsed}`)";
