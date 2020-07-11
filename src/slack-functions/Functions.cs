@@ -82,6 +82,7 @@ namespace slack_functions
                                 + "To get a status of how many images have been seen, ask for the special category of 'status'.\n"
                                 + "To schedule a bunch of messages, say `!timer interval duration [category]` where `interval` and `duration` are TimeSpans represented as HH:MM:SS or numbers suffixed by the appropriate `d`, `h`, or `m` character. (WARNING: There is no check for a valid category before scheduling all the images). Just `timer` also works.\n"
                                 + "To schedule a bunch of messages in a more rigid way, say `!cron expression duration [category]` where `expression` is a backtick'd cron expression and `duration` is the same as `!timer`. (WARNING: There is no check for a valid category before scheduling all the images). Just `cron` also works.\n"
+                                + "To schedule a bunch of messages in a more flexible way, say `!random count duration [category]` where `count` is the number of images you want to see and `duration` is the same as `!timer`. (WARNING: There is no check for a valid category before scheduling all the images). Just `random` also works.\n"
                                 + "(In case you forgot, cron is `min hour dom mon dow`)\n"
                                 + "To reset a category for re-viewing, say `!reset category`.\n"
                                 + "To force a rescan of available images, say `!rescan`.\n"
@@ -233,6 +234,74 @@ namespace slack_functions
 
                 // Inform of the configuration
                 await SendMessageToSlack(data.channel_id, $"{data.user_name} has scheduled {delays.Count} images for the '{data.text}' category with expression `{schedule}` for the next {dur_parse.parsed}.", logger);
+                return req.CreateResponse(HttpStatusCode.OK, new { response_type = "in_channel" });
+            }
+
+            // If category is !random, then do the random
+            if (data.text.StartsWith("!random") || data.text.StartsWith("random"))
+            {
+                // parts[0] !random/random
+                // parts[1] int count
+                // parts[2] TimeSpan/hours duration
+                // parts[3]... Category(ies) (optional)
+                var parts = data.text.Split(' ');
+                data.text = parts.Length > 3 ? string.Join(" ", parts, 3, parts.Length - 3) : null;
+                if (parts.Length < 3)
+                {
+                    await SendMessageToSlack(data.channel_id, "You did not have the right number of arguments to `!random`.", logger);
+                    return req.CreateResponse(HttpStatusCode.OK, new { response_type = "in_channel" });
+                }
+
+                string errMsg = null;
+                if (!int.TryParse(parts[1], out var cnt_parsed)) errMsg = $"Could not parse count from '{parts[1]}'.";
+                var dur_parse = parts[2].GetTimeSpan();
+                if (!string.IsNullOrWhiteSpace(dur_parse.msg)) errMsg = dur_parse.msg;
+                if (errMsg != null)
+                {
+                    await SendMessageToSlack(data.channel_id, errMsg, logger);
+                    return req.CreateResponse(HttpStatusCode.OK, new { response_type = "in_channel" });
+                }
+                logger.LogInformation("Category:{0} Count:{1} Duration:{2}", data.text, cnt_parsed, dur_parse.parsed);
+
+                if (dur_parse.parsed.TotalMinutes / cnt_parsed > 5)
+                    errMsg = "Cannot randomize more than 1 image per 5 minutes.";
+                else if (dur_parse.parsed > TimeSpan.FromDays(7))
+                    errMsg = $"Duration cannot last more than 7 days. (Is currently `{dur_parse.parsed}`)";
+                if (errMsg != null)
+                {
+                    await SendMessageToSlack(data.channel_id, errMsg, logger);
+                    return req.CreateResponse(HttpStatusCode.OK, new { response_type = "in_channel" });
+                }
+
+                // Create the random intervals
+                var count = cnt_parsed + 1;
+                var delays = new TimeSpan[count];
+                delays[0] = TimeSpan.Zero;
+                var random = new Random();
+                for (int i = 1; i < delays.Length; i++)
+                    delays[i] = TimeSpan.FromMinutes(dur_parse.parsed.TotalMinutes * random.NextDouble());
+                Array.Sort(delays);
+                logger.LogInformation($"Delays: {string.Join(", ", delays)}");
+
+                // Now that we passed command validation, actually schedule the messages
+                for (int i = 0; i < count; i++)
+                    await queue.AddMessageAsync(
+                        new CloudQueueMessage(
+                            JsonConvert.SerializeObject(
+                                new Messages.Request
+                                {
+                                    category = data.text,
+                                    channel_id = data.channel_id,
+                                    response_url = data.response_url,
+                                    user_name = data.user_name + $", random {i + 1}/{count}"
+                                })),
+                        timeToLive: null,
+                        initialVisibilityDelay: delays[i],
+                        options: null,
+                        operationContext: null);
+
+                // Inform of the configuration
+                await SendMessageToSlack(data.channel_id, $"{data.user_name} has scheduled {count} images for the '{data.text}' category randomly for the next {dur_parse.parsed}.", logger);
                 return req.CreateResponse(HttpStatusCode.OK, new { response_type = "in_channel" });
             }
 
