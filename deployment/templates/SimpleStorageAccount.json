@@ -26,13 +26,56 @@
     {
       "type": "Microsoft.Storage/storageAccounts",
       "name": "[parameters('storageAccountName')]",
-      "apiVersion": "2016-01-01",
+      "apiVersion": "2019-04-01",
       "location": "[resourceGroup().location]",
       "sku": {
         "name": "[parameters('storageAccountType')]"
       },
-      "kind": "Storage",
-      "properties": {}
+      "kind": "StorageV2",
+      "properties": {
+        "supportsHttpsTrafficOnly": true
+      }
+    },
+    {
+      "name": "[concat(parameters('storageAccountName'), '/default')]",
+      "type": "Microsoft.Storage/storageAccounts/managementPolicies",
+      "apiVersion": "2019-04-01",
+      "dependsOn": [
+        "[parameters('storageAccountName')]"
+      ],
+      "properties": {
+        "policy": {
+          "rules": [
+            {
+              "enabled": true,
+              "name": "release retention",
+              "type": "Lifecycle",
+              "definition": {
+                "actions": {
+                  "baseBlob": {
+                    "tierToCool": {
+                      "daysAfterModificationGreaterThan": 1
+                    },
+                    "delete": {
+                      "daysAfterModificationGreaterThan": 60
+                    }
+                  },
+                  "snapshot": {
+                    "delete": {
+                      "daysAfterCreationGreaterThan": 30
+                    }
+                  }
+                },
+                "filters": {
+                  "blobTypes": [
+                    "blockBlob"
+                  ]
+                }
+              }
+            }
+          ]
+        }
+      }
     }
   ]
 }
